@@ -164,7 +164,7 @@ export function Community() {
     }
   }, [])
 
-  // Real-time: post_likes (sync likes_count and is_liked)
+  // Real-time: post_likes (sync is_liked only; likes_count comes from posts UPDATE via trigger)
   useEffect(() => {
     if (!userId) return
     const channel = supabase
@@ -177,7 +177,7 @@ export function Community() {
           setPosts((prev) =>
             prev.map((p) =>
               p.id === row.post_id
-                ? { ...p, likes_count: (p.likes_count ?? 0) + 1, is_liked: row.user_id === userId ? true : p.is_liked }
+                ? { ...p, is_liked: row.user_id === userId ? true : p.is_liked }
                 : p
             )
           )
@@ -191,7 +191,7 @@ export function Community() {
           setPosts((prev) =>
             prev.map((p) =>
               p.id === row.post_id
-                ? { ...p, likes_count: Math.max(0, (p.likes_count ?? 0) - 1), is_liked: row.user_id === userId ? false : p.is_liked }
+                ? { ...p, is_liked: row.user_id === userId ? false : p.is_liked }
                 : p
             )
           )

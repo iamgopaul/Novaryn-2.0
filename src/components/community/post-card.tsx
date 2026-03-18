@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Post } from '@/lib/types'
@@ -45,6 +45,7 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const [commentSending, setCommentSending] = useState(false)
   const [isRepostComposerOpen, setIsRepostComposerOpen] = useState(false)
   const [repostText, setRepostText] = useState('')
+  const likeInProgressRef = useRef(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -142,38 +143,41 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   }
 
   const handleLike = async () => {
-    if (loading || !currentUserId) return
+    if (loading || !currentUserId || likeInProgressRef.current) return
+    likeInProgressRef.current = true
     setLoading(true)
+    try {
+      if (isLiked) {
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', post.id)
+          .eq('user_id', currentUserId)
+        if (error) {
+          console.error('Error unliking post', error)
+        } else {
+          setIsLiked(false)
+        }
+      } else {
+        const { error } = await supabase.from('post_likes').insert({
+          post_id: post.id,
+          user_id: currentUserId,
+        })
+        // 23505 = unique_violation (already liked) — don't treat as error so UI doesn't break
+        if (error && (error as { code?: string }).code !== '23505') {
+          console.error('Error liking post', error)
+        } else {
+          setIsLiked(true)
+        }
+      }
 
-    if (isLiked) {
-      const { error } = await supabase
-        .from('post_likes')
-        .delete()
-        .eq('post_id', post.id)
-        .eq('user_id', currentUserId)
-      if (error) {
-        console.error('Error unliking post', error)
-      } else {
-        setIsLiked(false)
-      }
-    } else {
-      const { error } = await supabase.from('post_likes').insert({
-        post_id: post.id,
-        user_id: currentUserId,
-      })
-      // 23505 = unique_violation (already liked) — don't treat as error so UI doesn't break
-      if (error && (error as { code?: string }).code !== '23505') {
-        console.error('Error liking post', error)
-      } else {
-        setIsLiked(true)
-      }
+      // Refetch likes_count from DB so display always matches (trigger updates posts.likes_count)
+      const { data } = await supabase.from('posts').select('likes_count').eq('id', post.id).single()
+      if (data?.likes_count != null) setLikesCount(data.likes_count)
+    } finally {
+      setLoading(false)
+      likeInProgressRef.current = false
     }
-
-    // Refetch likes_count from DB so display always matches (trigger updates posts.likes_count)
-    const { data } = await supabase.from('posts').select('likes_count').eq('id', post.id).single()
-    if (data?.likes_count != null) setLikesCount(data.likes_count)
-
-    setLoading(false)
   }
 
   const handleDelete = async () => {
