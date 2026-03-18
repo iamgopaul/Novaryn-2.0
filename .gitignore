@@ -19,3 +19,6 @@ dist/
 node_modules/
 .next/
 .DS_Store
+
+# Prefer Bun; avoid pnpm lockfile so Vercel uses bun install
+pnpm-lock.yaml
