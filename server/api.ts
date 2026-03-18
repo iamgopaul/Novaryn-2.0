@@ -239,7 +239,7 @@ Current workspace state:
 
 To WRITE or create a file, output exactly:
 WRITE_FILE path="path/to/file.ext"
-Then on the next line a fenced code block with the FULL file content. The user will see this code in the chat before applying. Create index.html, style.css, app.js, .env, etc. as needed.
+Then on the next line a fenced code block with ONLY the actual file content (the source code to save). Never put program output or "example output" in a WRITE_FILE block – only the code that belongs in that file. To show example output, describe it in text; do not use another code block with a filename.
 DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD allowed. Reply in natural language. Be concise and helpful.`
 
         const modelMessages = await convertToModelMessages(messages)

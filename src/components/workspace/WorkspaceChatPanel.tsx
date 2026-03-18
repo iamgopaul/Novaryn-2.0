@@ -111,7 +111,9 @@ function parseWorkspaceActions(text: string): {
     }
   }
 
-  // 2) Fallback: find fenced code blocks not already captured; associate with a path from preceding text
+  // 2) Fallback: find fenced code blocks not already captured; associate with a path from preceding text.
+  // Never add a fallback write for a path we already have from an explicit WRITE_FILE (that one is the real code; later blocks are often "example output").
+  const pathsAlreadyWritten = new Set(writeFiles.map((w) => w.path))
   const alreadyCapturedContent = new Set(writeFiles.map((w) => w.content.trim()))
   const codeBlockRegex = /```(?:\w*)\n?([\s\S]*?)```/g
   let blockMatch: RegExpExecArray | null
@@ -120,8 +122,9 @@ function parseWorkspaceActions(text: string): {
     if (!content || alreadyCapturedContent.has(content)) continue
     const beforeBlock = text.slice(Math.max(0, blockMatch.index - 400), blockMatch.index)
     const pathFromBefore = extractPathBeforeCodeBlock(beforeBlock)
-    if (pathFromBefore) {
+    if (pathFromBefore && !pathsAlreadyWritten.has(pathFromBefore)) {
       writeFiles.push({ path: pathFromBefore, content })
+      pathsAlreadyWritten.add(pathFromBefore)
       alreadyCapturedContent.add(content)
       displayText = displayText.replace(blockMatch[0], `**→ Will write to \`${pathFromBefore}\`:**\n\n${blockMatch[0]}\n\n`)
     }
@@ -213,7 +216,10 @@ export function WorkspaceChatPanel({
     if (!text) return
     const { writeFiles, deleteFiles, runCommands } = parseWorkspaceActions(text)
     deleteFiles.forEach((path) => onDeleteFile?.(path))
+    const appliedPaths = new Set<string>()
     writeFiles.forEach(({ path, content }) => {
+      if (appliedPaths.has(path)) return
+      appliedPaths.add(path)
       onWriteFile(path, content)
       onOpenFile?.(path)
     })

@@ -53,12 +53,12 @@ Current state:
 - Files:${filesSummary || ' (none)'}
 - Terminal:\n${terminalSummary || ' (empty)'}
 
-To write or create a file you MUST output this exact line first, then a fenced code block with the FULL file content on the next line. The code block will be shown in the chat so the user can see exactly what will be written before they Accept.
+To write or create a file you MUST output this exact line first, then a fenced code block containing ONLY the file contents (the actual code or text to save). Never put program output or "example output" inside a WRITE_FILE block – only the source code that should be saved to that file.
 WRITE_FILE path="path/to/file.ext"
 \`\`\`language
-<entire file content - no placeholders, no "..." - the real code>
+<actual file content only - the code that belongs in the file, not example output>
 \`\`\`
-You can create: index.html, style.css, app.js or main.ts, .env, .gitignore, README.md, and any other files. Use WRITE_FILE for each file. The user sees each code block in the chat and can Accept or Decline.
+If you want to show what the program will print, describe it in plain text (e.g. "When run, it will print: ...") and do NOT use another WRITE_FILE or a code block that looks like a file path. Only use WRITE_FILE for the real source code.
 DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD allowed. Reply in natural language. Be concise.`
 
     const modelMessages = await convertToModelMessages(messages)
