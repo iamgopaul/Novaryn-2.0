@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
-import { Bot, User, Send, Sparkles, MessageSquare, PanelRightClose, Check, X, Copy } from 'lucide-react'
+import { Bot, User, Send, Sparkles, MessageSquare, PanelRightClose, Check, X, Copy, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
+
+const WORKSPACE_CHAT_STORAGE_KEY = 'novaryn_workspace_chat'
 
 type UIMessage = { id: string; role: string; parts?: Array<{ type: string; text?: string }> }
 
@@ -191,7 +193,7 @@ export function WorkspaceChatPanel({
   const contextRef = useRef(workspaceContext)
   contextRef.current = workspaceContext
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat/workspace',
       body: () => ({
@@ -204,6 +206,26 @@ export function WorkspaceChatPanel({
     }),
     onError: (err) => setError(err.message ?? 'Chat failed'),
   })
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(WORKSPACE_CHAT_STORAGE_KEY)
+      if (raw && setMessages) {
+        const parsed = JSON.parse(raw) as unknown
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed as typeof messages)
+        }
+      }
+    } catch (_) {}
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- load once on mount
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(WORKSPACE_CHAT_STORAGE_KEY, JSON.stringify(messages))
+      } catch (_) {}
+    }
+  }, [messages])
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -260,6 +282,24 @@ export function WorkspaceChatPanel({
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-primary" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nova</span>
+          {messages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setMessages([])
+                setResolvedMessages({})
+                try {
+                  localStorage.removeItem(WORKSPACE_CHAT_STORAGE_KEY)
+                } catch (_) {}
+              }}
+              title="Start a new chat (clears history)"
+            >
+              <Trash2 className="h-3 w-3" />
+              New chat
+            </Button>
+          )}
         </div>
         {onCollapse && (
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCollapse} title="Close panel">

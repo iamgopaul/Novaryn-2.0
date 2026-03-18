@@ -142,7 +142,7 @@ const server = Bun.serve({
     }
 
     if (url.pathname === '/api/workspace/run-command' && req.method === 'POST') {
-      const ALLOWED = ['npm', 'npx', 'bun', 'node', 'yarn']
+      const ALLOWED = ['npm', 'npx', 'bun', 'node', 'yarn', 'java', 'javac', 'python3', 'python', 'g++', 'gcc', 'sh']
       try {
         const body = (await req.json()) as { command?: string; workspaceFiles?: Record<string, string> }
         const raw = typeof body?.command === 'string' ? body.command.trim() : ''
@@ -150,11 +150,10 @@ const server = Bun.serve({
         const bin = parts[0]?.toLowerCase()
         if (!bin || !ALLOWED.includes(bin)) {
           return Response.json(
-            { error: 'Only npm, npx, bun, node, and yarn are allowed.' },
+            { error: 'Allowed: npm, npx, bun, node, yarn, java, javac, python3, g++, gcc, sh.' },
             { status: 400 }
           )
         }
-        const args = parts.slice(1)
         const workspaceFiles = (body?.workspaceFiles && typeof body.workspaceFiles === 'object') ? body.workspaceFiles as Record<string, string> : {}
         const fs = await import('fs')
         const path = await import('path')
@@ -167,7 +166,9 @@ const server = Bun.serve({
             fs.mkdirSync(parent, { recursive: true })
             fs.writeFileSync(full, content)
           }
-          const proc = Bun.spawn([bin, ...args], {
+          const useShell = raw.includes('&&') || raw.includes(';')
+          const cmd = useShell ? ['sh', '-c', raw] : [bin, ...parts.slice(1)]
+          const proc = Bun.spawn(cmd, {
             cwd: dir,
             stdout: 'pipe',
             stderr: 'pipe',
@@ -230,7 +231,8 @@ const server = Bun.serve({
 3. DELETE – remove files from the workspace.
 4. RUN – execute commands in the user's terminal.
 
-You MUST scaffold full applications when asked (e.g. "create a fitness web app", "build a todo app"). Create ALL necessary files: HTML, CSS, JS/TS, .env when needed (use placeholder values and tell the user to add real secrets), and any config. Use multiple WRITE_FILE blocks so the user sees every file in the chat and can Accept to apply all.
+Always use the exact language and file types the user asks for: TypeScript → .ts (not .js), Java → .java, Python → .py, C++ → .cpp. Do not substitute a different language.
+You MUST scaffold full applications when asked. Create ALL necessary files in the requested language and correct extensions. Add .env when needed (placeholder values). Use multiple WRITE_FILE blocks so the user sees every file and can Accept to apply all.
 
 Current workspace state:
 - Active file: ${activePath ?? '(none)'}

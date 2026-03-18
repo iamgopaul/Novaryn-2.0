@@ -295,11 +295,8 @@ const helpText = `Available commands:
   ls       - List files (simulated)
   env      - Show environment variables (simulated)
   version  - Show Novaryn version
-  npm      - Run npm (install, run, etc.; requires API server: bun run server)
-  npx      - Run npx
-  bun      - Run bun
-  node     - Run node
-  yarn     - Run yarn`
+  npm, npx, bun, node, yarn - Package runners (need: bun run server)
+  java, javac, python3, g++, gcc - Run code (need: bun run server + JDK/Python/gcc)`
 
 export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) {
   const { resolvedTheme } = useTheme()
@@ -461,7 +458,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       const args = trimmed.split(' ')
       const command = args[0]?.toLowerCase() ?? ''
       const params = args.slice(1).join(' ')
-      const runAllowed = ['npm', 'npx', 'bun', 'node', 'yarn']
+      const runAllowed = ['npm', 'npx', 'bun', 'node', 'yarn', 'java', 'javac', 'python3', 'python', 'g++', 'gcc', 'sh']
       const appendInput = () => {
         setTerminalLines((prev) => [...prev, { type: 'input', content: `${prompt}${cmd}`, timestamp: new Date() }])
       }
@@ -632,6 +629,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
     const code = entryPath ? (workspaceFiles[entryPath] ?? '') : runCode
     const lang = entryPath ? getLanguageFromPath(entryPath) : runLanguage
     const runLabel = entryPath ?? activePath ?? 'entry'
+    const entryFile = entryPath ?? activePath
     setRunLoading(true)
     setActivePanel('terminal')
     setPanelOpen(true)
@@ -775,12 +773,58 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
         }
         return
       }
+      if (lang === 'java' && entryFile) {
+        const baseName = entryFile.replace(/\.java$/i, '')
+        const runCmd = `javac ${entryFile} && java ${baseName}`
+        try {
+          runOut('output', 'Running Java...\n')
+          const res = await fetch('/api/workspace/run-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: runCmd, workspaceFiles }),
+          })
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.stdout?.trim()) runOut('output', data.stdout.trim())
+            if (data.stderr?.trim()) runOut('error', data.stderr.trim())
+            if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
+            return
+          }
+        } catch (_) {}
+        runViaPiston('java', code, (o) => runOut('output', o), (e) => runOut('error', e)).catch(() => {})
+        return
+      }
+      if (lang === 'cpp' && entryFile) {
+        const runCmd = `g++ -o main ${entryFile} && ./main`
+        try {
+          runOut('output', 'Running C++...\n')
+          const res = await fetch('/api/workspace/run-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: runCmd, workspaceFiles }),
+          })
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.stdout?.trim()) runOut('output', data.stdout.trim())
+            if (data.stderr?.trim()) runOut('error', data.stderr.trim())
+            if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
+            return
+          }
+        } catch (_) {}
+        runViaPiston('cpp', code, (o) => runOut('output', o), (e) => runOut('error', e)).catch(() => {})
+        return
+      }
       if (PISTON_LANG[lang]) {
         await runViaPiston(
           lang,
           code,
           (out) => runOut('output', out),
-          (err) => runOut('error', err)
+          (err) => {
+            const msg = err.includes('401') || err.includes('whitelist')
+              ? 'Java/C++/etc. run via cloud API is restricted. Start the API server with "bun run server" and install JDK/g++ on your machine to run from the terminal or Run button.'
+              : err
+            runOut('error', msg)
+          }
         )
         return
       }
