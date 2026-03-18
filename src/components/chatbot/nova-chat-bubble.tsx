@@ -20,8 +20,8 @@ interface NovaChatBubbleProps {
 export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
   const [open, setOpen] = useState(false)
   const [minimized, setMinimized] = useState(false)
-  const [position, setPosition] = useState({ right: GAP, bottom: GAP })
-  const dragRef = useRef<{ clientX: number; clientY: number; right: number; bottom: number } | null>(null)
+  const [position, setPosition] = useState({ left: GAP, bottom: GAP })
+  const dragRef = useRef<{ clientX: number; clientY: number; left: number; bottom: number } | null>(null)
   const clickSuppressRef = useRef(false)
 
   const getContainerSize = () => {
@@ -29,11 +29,11 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
     return { w: POPUP_WIDTH, h: POPUP_HEIGHT + GAP + BUBBLE_SIZE }
   }
 
-  const clampPosition = useCallback((right: number, bottom: number) => {
-    if (typeof window === 'undefined') return { right, bottom }
+  const clampPosition = useCallback((left: number, bottom: number) => {
+    if (typeof window === 'undefined') return { left, bottom }
     const { w, h } = getContainerSize()
     return {
-      right: Math.max(0, Math.min(right, window.innerWidth - w)),
+      left: Math.max(0, Math.min(left, window.innerWidth - w)),
       bottom: Math.max(0, Math.min(bottom, window.innerHeight - h)),
     }
   }, [open, minimized])
@@ -41,11 +41,12 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault()
+      e.stopPropagation()
 
       dragRef.current = {
         clientX: e.clientX,
         clientY: e.clientY,
-        right: position.right,
+        left: position.left,
         bottom: position.bottom,
       }
       clickSuppressRef.current = false
@@ -53,9 +54,9 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
       const onMove = (evt: PointerEvent) => {
         if (!dragRef.current) return
         clickSuppressRef.current = true
-        const newRight = dragRef.current.right + (dragRef.current.clientX - evt.clientX)
+        const newLeft = dragRef.current.left + (evt.clientX - dragRef.current.clientX)
         const newBottom = dragRef.current.bottom + (dragRef.current.clientY - evt.clientY)
-        setPosition(clampPosition(newRight, newBottom))
+        setPosition(clampPosition(newLeft, newBottom))
       }
 
       const onUp = () => {
@@ -86,29 +87,28 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
   }, [])
 
   useEffect(() => {
-    setPosition((p) => clampPosition(p.right, p.bottom))
+    setPosition((p) => clampPosition(p.left, p.bottom))
   }, [open, minimized, clampPosition])
 
   const size = getContainerSize()
 
   return (
     <div
-      className="fixed z-50 flex flex-col items-end justify-end gap-3"
+      className="fixed z-50 flex flex-col items-start justify-end gap-3"
       style={{
-        right: position.right,
+        left: position.left,
         bottom: position.bottom,
         width: size.w,
         height: size.h,
       }}
     >
-      {/* Popup panel (when open) */}
+      {/* Popup panel (when open) - only the header bar is draggable so the form can receive clicks */}
       {open && (
         <div
           className={cn(
             'flex flex-col rounded-lg border bg-card shadow-lg overflow-hidden flex-shrink-0',
             minimized ? 'w-14 h-14' : 'w-[380px] h-[420px]'
           )}
-          onPointerDown={handlePointerDown}
         >
           {!minimized ? (
             <>
@@ -185,6 +185,7 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
         onClick={handleBubbleClick}
         onPointerDown={(e) => {
           if (open && !minimized) return
+          e.stopPropagation()
           handlePointerDown(e)
         }}
         aria-label="Open Nova chat"

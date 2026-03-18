@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -9,9 +10,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from 'next-themes'
-import { Play, Copy, Download, Terminal as TerminalIcon, Trash2, GripVertical, Package, FolderOpen, FileCode, Search, GitBranch, Puzzle, X, MessageSquare, FilePlus, PlayCircle, MoreHorizontal } from 'lucide-react'
+import { Play, Copy, Download, Terminal as TerminalIcon, Trash2, GripVertical, Package, FolderOpen, FileCode, Search, GitBranch, Puzzle, X, MessageSquare, FilePlus, PlayCircle, MoreHorizontal, Maximize2, Minimize2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { logger } from '@/lib/logger'
+import { cn } from '@/lib/utils'
 import { WorkspaceChatPanel } from '@/components/workspace/WorkspaceChatPanel'
 
 const STORAGE_KEY = 'novaryn_workspace'
@@ -205,8 +207,11 @@ const helpText = `Available commands:
   env      - Show environment variables (simulated)
   version  - Show Novaryn version`
 
-export function WorkspacePage() {
+export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) {
   const { resolvedTheme } = useTheme()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const isFullScreen = fullScreen || location.pathname === '/workspace/full'
   const [code, setCode] = useState(() => {
     const stored = getStoredCode('typescript')
     return stored ?? defaultByLanguage.typescript
@@ -652,11 +657,26 @@ export function WorkspacePage() {
   const fileTree = pathToTree(workspaceFiles)
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col">
+    <div
+      className={cn(
+        'flex w-full flex-col min-h-0',
+        isFullScreen ? 'h-screen min-h-dvh' : 'h-[calc(100vh-5rem)]'
+      )}
+    >
       {/* Main: Activity bar + Sidebar + Editor */}
       <div ref={containerRef} className="flex flex-1 min-h-0">
         {/* Activity bar */}
         <div className="flex w-12 shrink-0 flex-col items-center border-r border-border bg-muted/40 py-2">
+          {isFullScreen && (
+            <button
+              type="button"
+              onClick={() => navigate('/workspace')}
+              className="mb-1 flex h-10 w-10 items-center justify-center rounded hover:bg-muted"
+              title="Back to app"
+            >
+              <Minimize2 className="h-5 w-5 text-muted-foreground" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSidebarOpen((o) => !o)}
@@ -691,6 +711,16 @@ export function WorkspacePage() {
           >
             <MessageSquare className="h-5 w-5 text-muted-foreground" />
           </button>
+          {!isFullScreen && (
+            <button
+              type="button"
+              onClick={() => navigate('/workspace/full')}
+              className="mt-1 flex h-10 w-10 items-center justify-center rounded hover:bg-muted"
+              title="Expand to full page"
+            >
+              <Maximize2 className="h-5 w-5 text-muted-foreground" />
+            </button>
+          )}
         </div>
 
         {/* Sidebar - Explorer (resizable) */}

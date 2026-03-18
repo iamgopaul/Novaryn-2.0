@@ -34,7 +34,7 @@ export default function App() {
   return (
     <>
       <ReactiveBackground />
-      <div className="relative z-10 min-h-screen">
+      <div className="relative z-10 min-h-screen min-h-dvh w-full overflow-x-hidden">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
@@ -50,6 +50,7 @@ export default function App() {
             <Route path="projects/new" element={<NewProject />} />
             <Route path="tools" element={<Tools />} />
             <Route path="workspace" element={<WorkspacePage />} />
+            <Route path="workspace/full" element={<WorkspacePage fullScreen />} />
             <Route path="tools/editor" element={<EditorPage />} />
             <Route path="tools/terminal" element={<TerminalPage />} />
             <Route path="tools/docs" element={<DocsPage />} />

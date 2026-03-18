@@ -40,8 +40,18 @@ export function DashboardLayout() {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen min-h-dvh items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  const isWorkspaceFull = location.pathname === '/workspace/full'
+
+  if (isWorkspaceFull) {
+    return (
+      <div className="h-screen min-h-dvh w-screen overflow-hidden">
+        <Outlet />
       </div>
     )
   }
@@ -51,7 +61,7 @@ export function DashboardLayout() {
       <DashboardSidebar user={user} profile={profile} />
       <SidebarInset>
         <DashboardHeader user={user} profile={profile} />
-        <main className="flex-1 overflow-auto p-4 sm:p-6">
+        <main className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </SidebarInset>
