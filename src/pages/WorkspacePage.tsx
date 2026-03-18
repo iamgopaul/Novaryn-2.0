@@ -336,6 +336,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   const [outputContent, setOutputContent] = useState('')
   const [outputCopied, setOutputCopied] = useState(false)
   const [problemsCopied, setProblemsCopied] = useState(false)
+  const [terminalCopied, setTerminalCopied] = useState(false)
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [chatPanelOpen, setChatPanelOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(240)
@@ -507,14 +508,24 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
               const data = await res.json().catch(() => ({}))
               setTerminalLines((prev) => prev.slice(0, -1))
               if (!res.ok) {
-                setTerminalLines((p) => [...p, { type: 'error', content: data?.error ?? `Request failed (${res.status})`, timestamp: new Date() }])
+                const msg = res.status === 404 || res.status === 502
+                  ? 'Run-command server not available. Start it with "bun run server" in a separate terminal. For Java install JDK; for C++ install g++.'
+                  : (data?.error ?? `Request failed (${res.status})`)
+                setTerminalLines((p) => [...p, { type: 'error', content: msg, timestamp: new Date() }])
                 return
               }
               if (data.stdout?.trim()) {
                 setTerminalLines((p) => [...p, { type: 'output', content: data.stdout.trim(), timestamp: new Date() }])
               }
               if (data.stderr?.trim()) {
-                setTerminalLines((p) => [...p, { type: 'error', content: data.stderr.trim(), timestamp: new Date() }])
+                const stderr = data.stderr.trim()
+                setTerminalLines((p) => [...p, { type: 'error', content: stderr, timestamp: new Date() }])
+                if (/command not found.*\b(javac|java|g\+\+|gcc)\b/i.test(stderr)) {
+                  setTerminalLines((p) => [
+                    ...p,
+                    { type: 'output', content: 'Tip: Install JDK for Java (javac/java) or g++ for C++, then start the API server with "bun run server".', timestamp: new Date() },
+                  ])
+                }
               }
               if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) {
                 setTerminalLines((p) => [...p, { type: 'output', content: '(command completed)', timestamp: new Date() }])
@@ -523,7 +534,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
               setTerminalLines((prev) => prev.slice(0, -1))
               setTerminalLines((p) => [
                 ...p,
-                { type: 'error', content: `Failed to run: ${err instanceof Error ? err.message : 'Network or server error'}. Start the API server with "bun run server" for npm/bun/node.`, timestamp: new Date() },
+                { type: 'error', content: `Failed to run: ${err instanceof Error ? err.message : 'Network or server error'}. Start the API server with "bun run server" (and install JDK for Java, g++ for C++).`, timestamp: new Date() },
               ])
             }
             return
@@ -776,6 +787,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       if (lang === 'java' && entryFile) {
         const baseName = entryFile.replace(/\.java$/i, '')
         const runCmd = `javac ${entryFile} && java ${baseName}`
+        const pistonErrorMsg =
+          'Java run via cloud API is restricted. Start the API server with "bun run server" and install the JDK on your machine to run Java from the Run button or terminal.'
         try {
           runOut('output', 'Running Java...\n')
           const res = await fetch('/api/workspace/run-command', {
@@ -790,12 +803,18 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
             return
           }
+          if (res.status === 404 || res.status === 502) {
+            runOut('error', pistonErrorMsg)
+            return
+          }
         } catch (_) {}
-        runViaPiston('java', code, (o) => runOut('output', o), (e) => runOut('error', e)).catch(() => {})
+        runViaPiston('java', code, (o) => runOut('output', o), (e) => runOut('error', typeof e === 'string' && (e.includes('401') || e.includes('whitelist')) ? pistonErrorMsg : e)).catch(() => {})
         return
       }
       if (lang === 'cpp' && entryFile) {
         const runCmd = `g++ -o main ${entryFile} && ./main`
+        const pistonErrorMsg =
+          'C++ run via cloud API is restricted. Start the API server with "bun run server" and install g++ on your machine to run C++ from the Run button or terminal.'
         try {
           runOut('output', 'Running C++...\n')
           const res = await fetch('/api/workspace/run-command', {
@@ -810,8 +829,12 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
             return
           }
+          if (res.status === 404 || res.status === 502) {
+            runOut('error', pistonErrorMsg)
+            return
+          }
         } catch (_) {}
-        runViaPiston('cpp', code, (o) => runOut('output', o), (e) => runOut('error', e)).catch(() => {})
+        runViaPiston('cpp', code, (o) => runOut('output', o), (e) => runOut('error', typeof e === 'string' && (e.includes('401') || e.includes('whitelist')) ? pistonErrorMsg : e)).catch(() => {})
         return
       }
       if (PISTON_LANG[lang]) {
@@ -1188,25 +1211,43 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             {panelOpen && (
               <div className="flex-1 overflow-hidden">
                 {activePanel === 'terminal' && (
-                  <div
-                    ref={terminalRef}
-                    className="flex h-full flex-col overflow-auto p-4 font-mono text-sm text-green-400"
-                    onClick={() => terminalInputRef.current?.focus()}
-                  >
-                    {terminalLines.map((line, i) => (
-                      <div
-                        key={i}
-                        className={
-                          line.type === 'error'
-                            ? 'text-red-400'
-                            : line.type === 'input'
-                              ? 'text-cyan-400'
-                              : 'text-green-400'
-                        }
+                  <div className="flex h-full flex-col overflow-hidden">
+                    <div className="flex justify-end border-b border-border px-2 py-1.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={async () => {
+                          const text = terminalLines.map((l) => l.content).join('')
+                          if (text) await navigator.clipboard.writeText(text)
+                          setTerminalCopied(true)
+                          setTimeout(() => setTerminalCopied(false), 2000)
+                        }}
+                        disabled={terminalLines.length === 0}
+                        title="Copy all terminal output"
                       >
-                        <pre className="whitespace-pre-wrap">{line.content}</pre>
-                      </div>
-                    ))}
+                        {terminalCopied ? <span className="text-green-400">Copied!</span> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                      </Button>
+                    </div>
+                    <div
+                      ref={terminalRef}
+                      className="flex min-h-0 flex-1 flex-col overflow-auto p-4 font-mono text-sm text-green-400 select-text"
+                      onClick={() => terminalInputRef.current?.focus()}
+                    >
+                      {terminalLines.map((line, i) => (
+                        <div
+                          key={i}
+                          className={
+                            line.type === 'error'
+                              ? 'text-red-400'
+                              : line.type === 'input'
+                                ? 'text-cyan-400'
+                                : 'text-green-400'
+                          }
+                        >
+                          <pre className="whitespace-pre-wrap">{line.content}</pre>
+                        </div>
+                      ))}
                     <form onSubmit={handleTerminalSubmit} className="flex items-center gap-2">
                       <span className="text-cyan-400">{prompt}</span>
                       <input
@@ -1220,6 +1261,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                         spellCheck={false}
                       />
                     </form>
+                  </div>
                   </div>
                 )}
                 {activePanel === 'output' && (
