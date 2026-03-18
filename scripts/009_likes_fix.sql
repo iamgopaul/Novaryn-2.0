@@ -14,14 +14,15 @@ WHERE a.ctid < b.ctid
   AND a.post_id = b.post_id
   AND a.user_id = b.user_id;
 
--- 3) Enforce one like per user per post (skip if constraint already exists)
+-- 3) Enforce one like per user per post (skip if constraint/index already exists)
 DO $$
 BEGIN
   ALTER TABLE public.post_likes
     ADD CONSTRAINT post_likes_post_user_unique UNIQUE (post_id, user_id);
 EXCEPTION
-  WHEN duplicate_object THEN
-    NULL;
+  WHEN duplicate_object THEN NULL;
+  WHEN SQLSTATE '42P07' THEN NULL;   -- relation already exists (e.g. index for constraint)
+  WHEN OTHERS THEN NULL;
 END $$;
 
 -- 4) Trigger function: on INSERT into post_likes, increment posts.likes_count
