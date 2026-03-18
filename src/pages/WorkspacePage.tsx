@@ -294,7 +294,12 @@ const helpText = `Available commands:
   pwd      - Print working directory
   ls       - List files (simulated)
   env      - Show environment variables (simulated)
-  version  - Show Novaryn version`
+  version  - Show Novaryn version
+  npm      - Run npm (install, run, etc.; requires API server: bun run server)
+  npx      - Run npx
+  bun      - Run bun
+  node     - Run node
+  yarn     - Run yarn`
 
 export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) {
   const { resolvedTheme } = useTheme()
@@ -332,6 +337,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   const [activePanel, setActivePanel] = useState<'terminal' | 'output' | 'problems'>('terminal')
   const [editorMarkers, setEditorMarkers] = useState<Array<{ resource: string; severity: number; line: number; column: number; message: string }>>([])
   const [outputContent, setOutputContent] = useState('')
+  const [outputCopied, setOutputCopied] = useState(false)
+  const [problemsCopied, setProblemsCopied] = useState(false)
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [chatPanelOpen, setChatPanelOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(240)
@@ -400,7 +407,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
     if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight
   }, [terminalLines])
 
-  // Sync Monaco TypeScript with workspace files so imports resolve (e.g. main.ts -> ./src/utils.ts)
+  // Sync Monaco TypeScript with workspace files so imports resolve (e.g. main.ts -> ./Calculator.ts)
   useEffect(() => {
     const monaco = monacoInstanceRef.current as unknown as { languages: { typescript: { typescriptDefaults: { setExtraLibs: (libs: { content: string; filePath?: string }[]) => void; setCompilerOptions: (opts: Record<string, unknown>) => void }; ScriptTarget: { ES2020: number }; ModuleKind: { ESNext: number }; ModuleResolutionKind: { NodeJs: number } } } } | null
     if (!monaco?.languages?.typescript) return
@@ -410,6 +417,10 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       const ext = getExtension(path)
       if (ext === 'ts' || ext === 'tsx' || ext === 'js' || ext === 'jsx') {
         libs.push({ content, filePath: `file:///workspace/${path}` })
+        if (ext === 'ts' || ext === 'tsx') {
+          const pathNoExt = path.slice(0, -ext.length - 1)
+          libs.push({ content, filePath: `file:///workspace/${pathNoExt}` })
+        }
       }
     }
     ts.setExtraLibs(libs)
@@ -445,21 +456,26 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   }, [])
 
   const executeCommand = useCallback(
-    (cmd: string) => {
-      const args = cmd.trim().split(' ')
-      const command = args[0].toLowerCase()
+    async (cmd: string) => {
+      const trimmed = cmd.trim()
+      const args = trimmed.split(' ')
+      const command = args[0]?.toLowerCase() ?? ''
       const params = args.slice(1).join(' ')
+      const runAllowed = ['npm', 'npx', 'bun', 'node', 'yarn']
+      const appendInput = () => {
+        setTerminalLines((prev) => [...prev, { type: 'input', content: `${prompt}${cmd}`, timestamp: new Date() }])
+      }
+      if (!trimmed) return
+      if (command === 'clear') {
+        setTerminalLines([])
+        return
+      }
       let output: string
       let isError = false
       switch (command) {
-        case '':
-          return
         case 'help':
           output = helpText
           break
-        case 'clear':
-          setTerminalLines([])
-          return
         case 'echo':
           output = params || ''
           break
@@ -482,25 +498,56 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
           output = 'Novaryn Developer Hub v1.0.0'
           break
         default:
+          if (runAllowed.includes(command)) {
+            appendInput()
+            setTerminalLines((prev) => [...prev, { type: 'output', content: 'Running...', timestamp: new Date() }])
+            try {
+              const res = await fetch('/api/workspace/run-command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: trimmed, workspaceFiles }),
+              })
+              const data = await res.json().catch(() => ({}))
+              setTerminalLines((prev) => prev.slice(0, -1))
+              if (!res.ok) {
+                setTerminalLines((p) => [...p, { type: 'error', content: data?.error ?? `Request failed (${res.status})`, timestamp: new Date() }])
+                return
+              }
+              if (data.stdout?.trim()) {
+                setTerminalLines((p) => [...p, { type: 'output', content: data.stdout.trim(), timestamp: new Date() }])
+              }
+              if (data.stderr?.trim()) {
+                setTerminalLines((p) => [...p, { type: 'error', content: data.stderr.trim(), timestamp: new Date() }])
+              }
+              if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) {
+                setTerminalLines((p) => [...p, { type: 'output', content: '(command completed)', timestamp: new Date() }])
+              }
+            } catch (err) {
+              setTerminalLines((prev) => prev.slice(0, -1))
+              setTerminalLines((p) => [
+                ...p,
+                { type: 'error', content: `Failed to run: ${err instanceof Error ? err.message : 'Network or server error'}. Start the API server with "bun run server" for npm/bun/node.`, timestamp: new Date() },
+              ])
+            }
+            return
+          }
           output = `Command not found: ${command}. Type "help" for available commands.`
           isError = true
       }
-      setTerminalLines((prev) => [
-        ...prev,
-        { type: 'input', content: `${prompt}${cmd}`, timestamp: new Date() },
-        { type: isError ? 'error' : 'output', content: output, timestamp: new Date() },
-      ])
+      appendInput()
+      setTerminalLines((prev) => [...prev, { type: isError ? 'error' : 'output', content: output, timestamp: new Date() }])
     },
-    [prompt, shell]
+    [prompt, shell, workspaceFiles]
   )
 
   const handleTerminalSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (terminalInput.trim()) {
-      setTerminalHistory((prev) => [...prev, terminalInput])
+    const cmd = terminalInput.trim()
+    if (cmd) {
+      setTerminalHistory((prev) => [...prev, cmd])
       setTerminalHistoryIndex(-1)
+      void executeCommand(cmd)
     }
-    executeCommand(terminalInput)
     setTerminalInput('')
   }
 
@@ -1134,19 +1181,56 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                 {activePanel === 'output' && (
                   <div className="flex h-full flex-col overflow-hidden p-2">
                     <div className="flex justify-end gap-2 pb-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={async () => {
+                          const text = outputContent || ''
+                          if (text) await navigator.clipboard.writeText(text)
+                          setOutputCopied(true)
+                          setTimeout(() => setOutputCopied(false), 2000)
+                        }}
+                        disabled={!outputContent}
+                        title="Copy all output"
+                      >
+                        {outputCopied ? <span className="text-green-400">Copied!</span> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setOutputContent('')}>
                         Clear
                       </Button>
                     </div>
-                    <pre className="min-h-0 flex-1 overflow-auto rounded border border-border bg-zinc-900/50 p-3 font-mono text-xs text-green-400 whitespace-pre-wrap">
+                    <pre className="min-h-0 flex-1 overflow-auto rounded border border-border bg-zinc-900/50 p-3 font-mono text-xs text-green-400 whitespace-pre-wrap select-text">
                       {outputContent || 'Run code to see output here. Same run output also appears in the Terminal.'}
                     </pre>
                   </div>
                 )}
                 {activePanel === 'problems' && (
                   <div className="flex h-full flex-col overflow-hidden">
-                    <div className="border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                      {editorMarkers.length} problem{editorMarkers.length !== 1 ? 's' : ''}
+                    <div className="flex items-center justify-between border-b border-border px-2 py-1.5">
+                      <span className="text-xs text-muted-foreground">
+                        {editorMarkers.length} problem{editorMarkers.length !== 1 ? 's' : ''}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={async () => {
+                          const lines = editorMarkers.map((m) => {
+                            const path = m.resource.replace(/^file:\/\/\/workspace\//, '').replace(/^\/workspace\//, '') || m.resource
+                            const sev = m.severity === 8 ? 'Error' : m.severity === 4 ? 'Warning' : 'Info'
+                            return `${path}:${m.line}:${m.column} - ${sev}: ${m.message}`
+                          })
+                          const text = lines.join('\n')
+                          if (text) await navigator.clipboard.writeText(text)
+                          setProblemsCopied(true)
+                          setTimeout(() => setProblemsCopied(false), 2000)
+                        }}
+                        disabled={editorMarkers.length === 0}
+                        title="Copy all problems"
+                      >
+                        {problemsCopied ? <span className="text-green-400">Copied!</span> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                      </Button>
                     </div>
                     <div className="min-h-0 flex-1 overflow-auto p-2">
                       {editorMarkers.length === 0 ? (
@@ -1167,13 +1251,13 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                                       monacoRef.current?.setPosition?.({ lineNumber: m.line, column: m.column })
                                     }, 100)
                                   }}
-                                  className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/80"
+                                  className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/80 select-text"
                                 >
-                                  <span className={m.severity === 8 ? 'text-red-400' : m.severity === 4 ? 'text-amber-400' : 'text-blue-400'}>
+                                  <span className={`shrink-0 ${m.severity === 8 ? 'text-red-400' : m.severity === 4 ? 'text-amber-400' : 'text-blue-400'}`}>
                                     {severityLabel}
                                   </span>
-                                  <span className="truncate font-mono text-muted-foreground">{path}:{m.line}:{m.column}</span>
-                                  <span className="min-w-0 flex-1 truncate">{m.message}</span>
+                                  <span className="shrink-0 font-mono text-muted-foreground">{path}:{m.line}:{m.column}</span>
+                                  <span className="min-w-0 flex-1 break-words">{m.message}</span>
                                 </button>
                               </li>
                             )

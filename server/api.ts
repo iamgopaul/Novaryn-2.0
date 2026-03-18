@@ -141,6 +141,59 @@ const server = Bun.serve({
       }
     }
 
+    if (url.pathname === '/api/workspace/run-command' && req.method === 'POST') {
+      const ALLOWED = ['npm', 'npx', 'bun', 'node', 'yarn']
+      try {
+        const body = (await req.json()) as { command?: string; workspaceFiles?: Record<string, string> }
+        const raw = typeof body?.command === 'string' ? body.command.trim() : ''
+        const parts = raw.split(/\s+/).filter(Boolean)
+        const bin = parts[0]?.toLowerCase()
+        if (!bin || !ALLOWED.includes(bin)) {
+          return Response.json(
+            { error: 'Only npm, npx, bun, node, and yarn are allowed.' },
+            { status: 400 }
+          )
+        }
+        const args = parts.slice(1)
+        const workspaceFiles = (body?.workspaceFiles && typeof body.workspaceFiles === 'object') ? body.workspaceFiles as Record<string, string> : {}
+        const fs = await import('fs')
+        const path = await import('path')
+        const tmpBase = process.env.TMPDIR || '/tmp'
+        const dir = fs.mkdtempSync(path.join(tmpBase, 'novaryn-ws-'))
+        try {
+          for (const [filePath, content] of Object.entries(workspaceFiles)) {
+            const full = path.join(dir, filePath)
+            const parent = path.dirname(full)
+            fs.mkdirSync(parent, { recursive: true })
+            fs.writeFileSync(full, content)
+          }
+          const proc = Bun.spawn([bin, ...args], {
+            cwd: dir,
+            stdout: 'pipe',
+            stderr: 'pipe',
+            env: { ...process.env, CI: '1' },
+          })
+          const [stdout, stderr] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+          ])
+          await proc.exited
+          const exitCode = proc.exitCode ?? -1
+          return Response.json({ stdout, stderr, exitCode })
+        } finally {
+          try {
+            fs.rmSync(dir, { recursive: true })
+          } catch (_) {}
+        }
+      } catch (e) {
+        console.error('Workspace run-command error:', e)
+        return Response.json(
+          { error: e instanceof Error ? e.message : 'Command execution failed' },
+          { status: 500 }
+        )
+      }
+    }
+
     if (url.pathname === '/api/chat/workspace' && req.method === 'POST') {
       const groqKey = process.env.GROQ_API_KEY
       if (!groqKey) {
@@ -173,29 +226,21 @@ const server = Bun.serve({
         const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have full control to:
 
 1. READ – all open files and terminal output.
-2. WRITE – create or replace any file (use path with slashes for folders, e.g. src/utils.js).
+2. WRITE – create or replace any file (paths with slashes for folders, e.g. src/utils.js). You can create dotfiles like .env, .gitignore.
 3. DELETE – remove files from the workspace.
 4. RUN – execute commands in the user's terminal.
 
-You can: restructure the workspace (create folders, move/rename by writing to new path and deleting old), refactor code across multiple files (use multiple WRITE_FILE blocks), build or scaffold workspaces (create many files at once), and create or delete files as needed.
+You MUST scaffold full applications when asked (e.g. "create a fitness web app", "build a todo app"). Create ALL necessary files: HTML, CSS, JS/TS, .env when needed (use placeholder values and tell the user to add real secrets), and any config. Use multiple WRITE_FILE blocks so the user sees every file in the chat and can Accept to apply all.
 
 Current workspace state:
 - Active file: ${activePath ?? '(none)'}
 - All files and their contents:${filesSummary || ' (no files)'}
 - Recent terminal output:\n${terminalSummary || ' (empty)'}
 
-To WRITE or create a file, output exactly on a single line:
+To WRITE or create a file, output exactly:
 WRITE_FILE path="path/to/file.ext"
-Then on the next line start a fenced code block with triple backticks. Put the full file content inside. You can output multiple WRITE_FILE blocks to refactor or scaffold.
-
-To DELETE a file, output exactly on a line:
-DELETE_FILE path="path/to/file.ext"
-Use for cleanup, or to move (write new path then delete old).
-
-To RUN a command in the terminal, output exactly on a line:
-RUN_CMD your command here
-
-All WRITE_FILE, DELETE_FILE, and RUN_CMD are executed automatically. Also reply in natural language. Be concise and helpful.`
+Then on the next line a fenced code block with the FULL file content. The user will see this code in the chat before applying. Create index.html, style.css, app.js, .env, etc. as needed.
+DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD allowed. Reply in natural language. Be concise and helpful.`
 
         const modelMessages = await convertToModelMessages(messages)
         const result = streamText({

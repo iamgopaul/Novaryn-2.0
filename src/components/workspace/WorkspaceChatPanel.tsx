@@ -106,7 +106,8 @@ function parseWorkspaceActions(text: string): {
     const content = codeBlock ? codeBlock[1].trim() : raw.replace(/^```\w*\n?/, '').replace(/\n?```$/, '').trim()
     if (path && content) {
       writeFiles.push({ path, content })
-      displayText = displayText.replace(m[0], `*[Wrote to \`${path}\`]*\n\n`)
+      // Keep the code block visible in chat so the user sees what will be written; only replace the directive with a label
+      displayText = displayText.replace(m[0], `**→ Will write to \`${path}\`:**\n\n${raw}\n\n`)
     }
   }
 
@@ -122,7 +123,7 @@ function parseWorkspaceActions(text: string): {
     if (pathFromBefore) {
       writeFiles.push({ path: pathFromBefore, content })
       alreadyCapturedContent.add(content)
-      displayText = displayText.replace(blockMatch[0], `*[Wrote to \`${pathFromBefore}\`]*\n\n`)
+      displayText = displayText.replace(blockMatch[0], `**→ Will write to \`${pathFromBefore}\`:**\n\n${blockMatch[0]}\n\n`)
     }
   }
 
