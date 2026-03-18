@@ -232,6 +232,7 @@ const server = Bun.serve({
 4. RUN – execute commands in the user's terminal.
 
 Always use the exact language and file types the user asks for: TypeScript → .ts (not .js), Java → .java, Python → .py, C++ → .cpp. Do not substitute a different language.
+For single-file Java programs, use "public class Main" and save as Main.java so Run works in the workspace.
 You MUST scaffold full applications when asked. Create ALL necessary files in the requested language and correct extensions. Add .env when needed (placeholder values). Use multiple WRITE_FILE blocks so the user sees every file and can Accept to apply all.
 
 Current workspace state:

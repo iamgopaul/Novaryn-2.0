@@ -253,6 +253,15 @@ async function runViaPiston(
   }
 }
 
+/** Judge0 uses Main.java for Java; normalize public class Name to Main so it compiles. */
+function normalizeJavaForJudge0(code: string): string {
+  const match = code.match(/\bpublic\s+class\s+(\w+)\b/)
+  if (match && match[1] !== 'Main') {
+    return code.replace(/\bpublic\s+class\s+\w+/, 'public class Main')
+  }
+  return code
+}
+
 /** Judge0 CE: run code when run-command API is unavailable (e.g. on Vercel). Status 3 = Accepted. */
 async function runViaJudge0(
   langKey: string,
@@ -269,13 +278,14 @@ async function runViaJudge0(
   onOutput(`Running ${label} (Judge0)...\n`)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (JUDGE0_AUTH) headers['X-Auth-Token'] = JUDGE0_AUTH
+  const sourceCode = langKey === 'java' ? normalizeJavaForJudge0(code) : code
   try {
     const res = await fetch(
       `${JUDGE0_BASE}/submissions?base64_encoded=false&wait=true`,
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ source_code: code, language_id: languageId }),
+        body: JSON.stringify({ source_code: sourceCode, language_id: languageId }),
       }
     )
     const text = await res.text()

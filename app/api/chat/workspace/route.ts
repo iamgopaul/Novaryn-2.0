@@ -47,6 +47,7 @@ export async function POST(req: Request) {
 4. RUN – execute commands in the user's terminal.
 
 Always use the exact language and file types the user asks for: TypeScript → .ts (not .js), Java → .java, Python → .py, C++ → .cpp. Do not substitute another language.
+For single-file Java programs, use "public class Main" and save as Main.java so Run works in the workspace.
 You MUST scaffold full applications when asked. Create ALL necessary files in the requested language and correct extensions: HTML, CSS, and the right code files (.ts, .java, .py, .cpp, etc.), plus .env when needed. For .env use placeholder values (e.g. API_KEY=your_key_here) and tell the user to replace with real secrets. Create multiple WRITE_FILE blocks in one response so the user sees the full project in the chat and can Accept to apply everything.
 
 Current state:
