@@ -16,7 +16,12 @@ import {
 import { cn } from '@/lib/utils'
 
 interface PostCardProps {
-  post: Omit<Post, 'profile'> & { profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null } }
+  post: Omit<Post, 'profile' | 'original_post'> & {
+    profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }
+    original_post?: Omit<Post, 'profile' | 'original_post'> & {
+      profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }
+    }
+  }
   currentUserId?: string
 }
 
@@ -34,6 +39,19 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
 
   const isOwner = currentUserId === post.user_id
   const profile = post.profile
+  const isRepost = !!post.repost_of && !!post.original_post
+
+  const handleRepost = async () => {
+    if (loading || !currentUserId) return
+    setLoading(true)
+    const targetId = post.repost_of || post.id
+    await supabase.from('posts').insert({
+      user_id: currentUserId,
+      content: '',
+      repost_of: targetId,
+    })
+    setLoading(false)
+  }
 
   const handleLike = async () => {
     if (loading || !currentUserId) return
@@ -67,25 +85,32 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
+        {isRepost && (
+          <div className="mb-2 text-xs text-muted-foreground">
+            Reposted by <span className="font-medium text-foreground">{profile?.display_name || 'Unknown'}</span> ·{' '}
+            {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+          </div>
+        )}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <Link to={`/community/profile/${profile?.username || post.user_id}`}>
+            <Link to={`/community/profile/${(isRepost ? post.original_post?.profile?.username : profile?.username) || (isRepost ? post.original_post?.user_id : post.user_id)}`}>
               <Avatar>
-                <AvatarImage src={profile?.avatar_url || undefined} />
+                <AvatarImage src={(isRepost ? post.original_post?.profile?.avatar_url : profile?.avatar_url) || undefined} />
                 <AvatarFallback>
-                  {profile?.display_name?.slice(0, 2).toUpperCase() || 'U'}
+                  {(isRepost ? post.original_post?.profile?.display_name : profile?.display_name)?.slice(0, 2).toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
             </Link>
             <div>
               <Link
-                to={`/community/profile/${profile?.username || post.user_id}`}
+                to={`/community/profile/${(isRepost ? post.original_post?.profile?.username : profile?.username) || (isRepost ? post.original_post?.user_id : post.user_id)}`}
                 className="font-medium hover:underline"
               >
-                {profile?.display_name || 'Unknown User'}
+                {(isRepost ? post.original_post?.profile?.display_name : profile?.display_name) || 'Unknown User'}
               </Link>
               <p className="text-sm text-muted-foreground">
-                @{profile?.username || 'unknown'} · {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                @{(isRepost ? post.original_post?.profile?.username : profile?.username) || 'unknown'} ·{' '}
+                {formatDistanceToNow(new Date((isRepost ? post.original_post?.created_at : post.created_at) as string), { addSuffix: true })}
               </p>
             </div>
           </div>
@@ -107,7 +132,13 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="whitespace-pre-wrap">{post.content}</p>
+        {isRepost ? (
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="whitespace-pre-wrap">{post.original_post?.content}</p>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap">{post.content}</p>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-4">
@@ -121,15 +152,15 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             )}
           >
             <Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />
-            {likesCount > 0 && likesCount}
+            {likesCount}
           </Button>
           <Button variant="ghost" size="sm" className="gap-2">
             <MessageCircle className="h-4 w-4" />
-            {post.comments_count > 0 && post.comments_count}
+            {post.comments_count}
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2">
+          <Button variant="ghost" size="sm" className="gap-2" onClick={handleRepost} disabled={!currentUserId || loading}>
             <Repeat2 className="h-4 w-4" />
-            {post.reposts_count > 0 && post.reposts_count}
+            {post.reposts_count}
           </Button>
         </div>
       </CardContent>

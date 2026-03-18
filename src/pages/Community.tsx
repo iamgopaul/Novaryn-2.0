@@ -9,7 +9,12 @@ import { MessageCircle, TrendingUp, Users } from 'lucide-react'
 import { Post } from '@/lib/types'
 
 type BasicProfile = { id: string; username: string | null; display_name: string | null; avatar_url: string | null }
-type PostWithMeta = Omit<Post, 'profile'> & { profile?: BasicProfile; is_liked?: boolean }
+type OriginalPostWithMeta = Omit<Post, 'profile' | 'original_post' | 'is_liked'> & { profile?: BasicProfile }
+type PostWithMeta = Omit<Post, 'profile' | 'original_post'> & {
+  profile?: BasicProfile
+  is_liked?: boolean
+  original_post?: OriginalPostWithMeta
+}
 
 export function Community() {
   const [posts, setPosts] = useState<PostWithMeta[]>([])
@@ -30,19 +35,38 @@ export function Community() {
         .order('created_at', { ascending: false })
         .limit(20)
       const rawPosts = (postsData || []) as PostWithMeta[]
-      const userIds = Array.from(new Set(rawPosts.map((p) => p.user_id).filter(Boolean)))
-      const { data: profilesData } = userIds.length
+      const originalIds = Array.from(new Set(rawPosts.map((p) => p.repost_of).filter(Boolean))) as string[]
+      const { data: originalsData } = originalIds.length
+        ? await supabase.from('posts').select('*').in('id', originalIds)
+        : { data: [] as OriginalPostWithMeta[] }
+      const originalMap = new Map(((originalsData as any[]) || []).map((op) => [op.id, op as OriginalPostWithMeta]))
+
+      const allUserIds = Array.from(
+        new Set([
+          ...rawPosts.map((p) => p.user_id),
+          ...(((originalsData as any[]) || []).map((p) => p.user_id) as string[]),
+        ].filter(Boolean))
+      )
+      const { data: profilesData } = allUserIds.length
         ? await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url')
-            .in('id', userIds)
+            .in('id', allUserIds)
         : { data: [] as BasicProfile[] }
       const profileMap = new Map((profilesData as BasicProfile[] | null | undefined)?.map((pr) => [pr.id, pr]) ?? [])
-      const postsWithProfile: PostWithMeta[] = rawPosts.map((p) => ({
-        ...p,
-        profile: profileMap.get(p.user_id),
-        is_liked: false,
-      }))
+
+      const postsWithProfile: PostWithMeta[] = rawPosts.map((p) => {
+        const original = p.repost_of ? originalMap.get(p.repost_of) : undefined
+        const originalWithProfile = original
+          ? ({ ...original, profile: profileMap.get(original.user_id) } as OriginalPostWithMeta)
+          : undefined
+        return {
+          ...p,
+          profile: profileMap.get(p.user_id),
+          original_post: originalWithProfile,
+          is_liked: false,
+        }
+      })
 
       if (user) {
         const { data: likes } = await supabase.from('post_likes').select('post_id').eq('user_id', user.id)
@@ -75,12 +99,26 @@ export function Community() {
               .eq('id', newRow.id)
               .single()
             if (data) {
+              const postRow = data as PostWithMeta
               const { data: pr } = await supabase
                 .from('profiles')
                 .select('id, username, display_name, avatar_url')
-                .eq('id', (data as { user_id: string }).user_id)
+                .eq('id', postRow.user_id)
                 .maybeSingle()
-              const withProfile = { ...data, profile: (pr as BasicProfile | null) ?? undefined, is_liked: false }
+              let original_post: OriginalPostWithMeta | undefined
+              if (postRow.repost_of) {
+                const { data: op } = await supabase.from('posts').select('*').eq('id', postRow.repost_of).maybeSingle()
+                if (op) {
+                  const { data: opr } = await supabase
+                    .from('profiles')
+                    .select('id, username, display_name, avatar_url')
+                    .eq('id', (op as { user_id: string }).user_id)
+                    .maybeSingle()
+                  original_post = { ...(op as any), profile: (opr as BasicProfile | null) ?? undefined } as OriginalPostWithMeta
+                }
+              }
+
+              const withProfile = { ...postRow, profile: (pr as BasicProfile | null) ?? undefined, original_post, is_liked: false }
               setPosts((prev) => [withProfile as PostWithMeta, ...prev])
             }
             setTotalPosts((n) => n + 1)
