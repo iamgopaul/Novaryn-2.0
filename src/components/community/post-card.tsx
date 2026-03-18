@@ -57,7 +57,8 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
 
   const handleGoToOriginal = () => {
     if (!post.original_post) return
-    navigate(`#post-${post.original_post.id}`)
+    // Always navigate to the original post on the community page
+    navigate(`/community#post-${post.original_post.id}`)
   }
 
   useEffect(() => {
@@ -115,9 +116,11 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     if (loading || !currentUserId) return
     setLoading(true)
     const targetId = post.repost_of || post.id
+    const message = window.prompt('Add a message to your repost (optional):') ?? ''
+    const content = message.trim()
     const { error } = await supabase.from('posts').insert({
       user_id: currentUserId,
-      content: '',
+      content,
       repost_of: targetId,
     })
     if (error) {

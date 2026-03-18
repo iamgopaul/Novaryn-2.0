@@ -87,7 +87,8 @@ export function Community() {
     load()
   }, [])
 
-  // Scroll to and briefly highlight a specific post when hash like #post-<id> is present
+  // Scroll to and briefly highlight a specific post when hash like #post-<id> is present.
+  // Depends on full location so repeated navigations to the same hash still retrigger.
   useEffect(() => {
     if (!location.hash?.startsWith('#post-')) return
     const id = location.hash.replace('#post-', '')
@@ -102,9 +103,8 @@ export function Community() {
     const timeout = setTimeout(() => {
       setHighlightId(null)
     }, 1600)
-
     return () => clearTimeout(timeout)
-  }, [location.hash])
+  }, [location])
 
   // Real-time: posts
   useEffect(() => {
