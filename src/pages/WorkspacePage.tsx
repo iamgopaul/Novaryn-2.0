@@ -28,6 +28,19 @@ console.log(greet('Developer'));`,
   'index.html': '<!DOCTYPE html>\n<html>\n<head><title>App</title></head>\n<body>\n  <h1>Hello</h1>\n</body>\n</html>',
   'style.css': '/* Styles */\nbody { font-family: system-ui; }\n',
   'src/utils.js': '// Utils\nexport function add(a, b) { return a + b; }\n',
+  'tsconfig.json': `{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}\n`,
+  'package.json': '{\n  "name": "workspace",\n  "type": "module"\n}\n',
 }
 
 function getExtension(path: string): string {
@@ -113,6 +126,68 @@ const PISTON_LANG: Record<string, { piston: string; filename: string }> = {
 }
 
 const PISTON_API_URL = 'https://emkc.org/api/v2/piston/execute'
+
+/** Resolve import spec relative to fromPath; return workspace path (no leading slash). */
+function resolveImportPath(fromPath: string, importSpec: string): string {
+  const spec = importSpec.replace(/^["']|["']$/g, '').trim()
+  const fromDir = fromPath.includes('/') ? fromPath.replace(/\/[^/]+$/, '') : ''
+  const combined = fromDir ? `${fromDir}/${spec}` : spec
+  const parts = combined.split('/').filter(Boolean)
+  const out: string[] = []
+  for (const p of parts) {
+    if (p === '.') continue
+    if (p === '..') {
+      out.pop()
+      continue
+    }
+    out.push(p)
+  }
+  return out.join('/')
+}
+
+/** Find workspace path for resolved path (try with .ts, .tsx, .js). */
+function findWorkspacePath(files: Record<string, string>, resolved: string): string | null {
+  if (files[resolved]) return resolved
+  for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
+    const p = resolved.endsWith(ext) ? resolved : `${resolved}${ext}`
+    if (files[p]) return p
+  }
+  return null
+}
+
+/** Collect import specs from TS/JS source (relative and same-dir). */
+function collectImports(source: string): string[] {
+  const specs: string[] = []
+  const re = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+)?["']([^"']+)["']|require\s*\(\s*["']([^"']+)["']\s*\)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source)) !== null) {
+    const spec = m[1] ?? m[2]
+    if (!spec || (!spec.startsWith('.') && !spec.startsWith('/'))) continue
+    if (!spec.match(/^[a-z]+:/)) specs.push(spec)
+  }
+  return specs
+}
+
+/** Topological order of paths so dependencies come first (only workspace .ts/.tsx/.js). */
+function orderTsEntry(files: Record<string, string>, entryPath: string): string[] {
+  const order: string[] = []
+  const seen = new Set<string>()
+  const visit = (path: string) => {
+    if (seen.has(path)) return
+    seen.add(path)
+    const content = files[path]
+    if (!content) return
+    const fromPath = path
+    for (const spec of collectImports(content)) {
+      const resolved = resolveImportPath(fromPath, spec)
+      const target = findWorkspacePath(files, resolved)
+      if (target) visit(target)
+    }
+    order.push(path)
+  }
+  visit(entryPath)
+  return order
+}
 
 async function runViaPiston(
   langKey: string,
@@ -240,7 +315,12 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       const raw = localStorage.getItem(WORKSPACE_FILES_KEY)
       if (raw) {
         const parsed = JSON.parse(raw) as Record<string, string>
-        if (typeof parsed === 'object' && parsed !== null) return parsed
+        if (typeof parsed === 'object' && parsed !== null) {
+          const merged = { ...parsed }
+          if (!merged['tsconfig.json']) merged['tsconfig.json'] = DEFAULT_WORKSPACE_FILES['tsconfig.json']
+          if (!merged['package.json']) merged['package.json'] = DEFAULT_WORKSPACE_FILES['package.json']
+          return merged
+        }
       }
     } catch (_) {}
     return { ...DEFAULT_WORKSPACE_FILES }
@@ -250,6 +330,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [panelOpen, setPanelOpen] = useState(true)
   const [activePanel, setActivePanel] = useState<'terminal' | 'output' | 'problems'>('terminal')
+  const [editorMarkers, setEditorMarkers] = useState<Array<{ resource: string; severity: number; line: number; column: number; message: string }>>([])
+  const [outputContent, setOutputContent] = useState('')
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [chatPanelOpen, setChatPanelOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(240)
@@ -299,6 +381,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const monacoRef = useRef<Parameters<NonNullable<React.ComponentProps<typeof Editor>['onMount']>>[0] | null>(null)
+  const monacoInstanceRef = useRef<typeof import('monaco-editor') | null>(null)
+  const markersDisposableRef = useRef<{ dispose: () => void } | null>(null)
 
   const shellConfig = shells.find((s) => s.value === shell) || shells[0]
   const prompt = shellConfig.prompt
@@ -315,6 +399,46 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight
   }, [terminalLines])
+
+  // Sync Monaco TypeScript with workspace files so imports resolve (e.g. main.ts -> ./src/utils.ts)
+  useEffect(() => {
+    const monaco = monacoInstanceRef.current as unknown as { languages: { typescript: { typescriptDefaults: { setExtraLibs: (libs: { content: string; filePath?: string }[]) => void; setCompilerOptions: (opts: Record<string, unknown>) => void }; ScriptTarget: { ES2020: number }; ModuleKind: { ESNext: number }; ModuleResolutionKind: { NodeJs: number } } } } | null
+    if (!monaco?.languages?.typescript) return
+    const ts = monaco.languages.typescript.typescriptDefaults
+    const libs: { content: string; filePath?: string }[] = []
+    for (const [path, content] of Object.entries(workspaceFiles)) {
+      const ext = getExtension(path)
+      if (ext === 'ts' || ext === 'tsx' || ext === 'js' || ext === 'jsx') {
+        libs.push({ content, filePath: `file:///workspace/${path}` })
+      }
+    }
+    ts.setExtraLibs(libs)
+    const tsconfigStr = workspaceFiles['tsconfig.json']
+    const { ScriptTarget, ModuleKind, ModuleResolutionKind } = monaco.languages.typescript
+    if (tsconfigStr) {
+      try {
+        const tsconfig = JSON.parse(tsconfigStr) as { compilerOptions?: Record<string, unknown> }
+        const opts = tsconfig.compilerOptions ?? {}
+        ts.setCompilerOptions({
+          target: (opts.target as number) ?? ScriptTarget.ES2020,
+          module: (opts.module as number) ?? ModuleKind.ESNext,
+          moduleResolution: ModuleResolutionKind.NodeJs,
+          strict: opts.strict !== false,
+          esModuleInterop: opts.esModuleInterop !== false,
+          skipLibCheck: true,
+        })
+      } catch (_) {
+        ts.setCompilerOptions({
+          target: ScriptTarget.ES2020,
+          module: ModuleKind.ESNext,
+          moduleResolution: ModuleResolutionKind.NodeJs,
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+        })
+      }
+    }
+  }, [workspaceFiles])
 
   const appendTerminal = useCallback((type: TerminalLine['type'], content: string) => {
     setTerminalLines((prev) => [...prev, { type, content, timestamp: new Date() }])
@@ -460,9 +584,15 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   const handleRun = useCallback(async (entryPath?: string) => {
     const code = entryPath ? (workspaceFiles[entryPath] ?? '') : runCode
     const lang = entryPath ? getLanguageFromPath(entryPath) : runLanguage
+    const runLabel = entryPath ?? activePath ?? 'entry'
     setRunLoading(true)
     setActivePanel('terminal')
     setPanelOpen(true)
+    const runOut = (type: 'output' | 'error', content: string) => {
+      appendTerminal(type, content)
+      setOutputContent((prev) => prev + content + '\n')
+    }
+    setOutputContent((prev) => prev + `\n--- Run (${runLabel}) ${new Date().toLocaleTimeString()} ---\n`)
     try {
       if (lang === 'javascript') {
         const logs: string[] = []
@@ -475,9 +605,9 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             `const __log = console.log; try { ${code} } finally { console.log = __log; }`
           )
           run({ ...console, log: captureLog })
-          appendTerminal('output', logs.join('\n') || '(no output)')
+          runOut('output', logs.join('\n') || '(no output)')
         } catch (e: unknown) {
-          appendTerminal('error', `Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
+          runOut('error', `Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
         }
         return
       }
@@ -485,29 +615,53 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
         try {
           // @ts-expect-error - ESM URL resolved at runtime
           const ts = await import('https://esm.sh/typescript@5.6.3')
-          const out = ts.transpileModule(code, {
-            compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
-          })
+          const entry = entryPath ?? activePath ?? 'main.ts'
+          const ordered = orderTsEntry(workspaceFiles, entry)
+          const transpiled: Record<string, string> = {}
+          const compilerOpts = {
+            target: ts.ScriptTarget.ES2020,
+            module: ts.ModuleKind.CommonJS,
+            moduleResolution: ts.ModuleResolutionKind.NodeJs,
+            esModuleInterop: true,
+            allowJs: true,
+          }
+          for (const path of ordered) {
+            const src = workspaceFiles[path] ?? ''
+            const out = ts.transpileModule(src, { compilerOptions: compilerOpts })
+            transpiled[path] = out.outputText
+          }
+          const modules: Record<string, { exports: Record<string, unknown> }> = {}
           const logs: string[] = []
           const captureLog = (...args: unknown[]) => {
             logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' '))
           }
-          const run = new Function(
-            'console',
-            `const __log = console.log; try { ${out.outputText} } finally { console.log = __log; }`
-          )
-          run({ ...console, log: captureLog })
-          appendTerminal('output', logs.join('\n') || '(no output)')
+          for (const path of ordered) {
+            const mod = { exports: {} as Record<string, unknown> }
+            modules[path] = mod
+            const req = (spec: string) => {
+              const r = resolveImportPath(path, spec)
+              const t = findWorkspacePath(workspaceFiles, r)
+              if (!t || !(t in modules)) throw new Error(`Cannot find module '${spec}' (resolved: ${r})`)
+              return modules[t].exports
+            }
+            try {
+              const runModule = new Function('exports', 'require', 'console', transpiled[path])
+              runModule(mod.exports, req, { ...console, log: captureLog })
+            } catch (err) {
+              throw new Error(`In ${path}: ${err instanceof Error ? err.message : String(err)}`)
+            }
+          }
+          runOut('output', logs.join('\n') || '(no output)')
         } catch (e: unknown) {
-          appendTerminal('error', `TypeScript: ${e instanceof Error ? e.message : 'Unknown error'}`)
+          runOut('error', `TypeScript: ${e instanceof Error ? e.message : 'Unknown error'}`)
         }
         return
       }
       if (lang === 'python') {
         try {
-          appendTerminal('output', 'Running Python...\n')
+          runOut('output', 'Running Python...\n')
           if (!pyodideRef.current) {
-            appendTerminal('output', 'Loading Python runtime (Pyodide)...\n')
+            runOut('output', 'Loading Python runtime (Pyodide)...\n')
             const loadPyodide = (window as unknown as { loadPyodide?: (opts: { indexURL: string }) => Promise<{ runPythonAsync: (c: string) => Promise<void>; loadPackage: (n: string) => Promise<void> }> }).loadPyodide
             if (!loadPyodide) {
               const script = document.createElement('script')
@@ -529,8 +683,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             }).loadPyodide
             const pyodide = await loader({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/' })
             await pyodide.loadPackage('micropip')
-            pyodide.setStdout({ write: (s) => appendTerminal('output', s) })
-            pyodide.setStderr({ write: (s) => appendTerminal('error', s) })
+            pyodide.setStdout({ write: (s) => runOut('output', s) })
+            pyodide.setStderr({ write: (s) => runOut('error', s) })
             pyodideRef.current = pyodide
           }
           const pyodide = pyodideRef.current
@@ -539,15 +693,15 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             .map((p) => p.trim())
             .filter(Boolean)
           if (pkgs.length > 0) {
-            appendTerminal('output', `Installing packages: ${pkgs.join(', ')}...`)
+            runOut('output', `Installing packages: ${pkgs.join(', ')}...`)
             await pyodide.runPythonAsync(
               `import micropip\nawait micropip.install([${pkgs.map((p) => `"${p}"`).join(', ')}])`
             )
           }
           await pyodide.runPythonAsync(code)
-          appendTerminal('output', '(Python finished)')
+          runOut('output', '(Python finished)')
         } catch (e: unknown) {
-          appendTerminal('error', `Python: ${e instanceof Error ? e.message : String(e)}`)
+          runOut('error', `Python: ${e instanceof Error ? e.message : String(e)}`)
         }
         return
       }
@@ -556,9 +710,9 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
         if (win) {
           win.document.write(code)
           win.document.close()
-          appendTerminal('output', 'HTML preview opened in new tab.')
+          runOut('output', 'HTML preview opened in new tab.')
         } else {
-          appendTerminal('error', 'Allow pop-ups to preview HTML.')
+          runOut('error', 'Allow pop-ups to preview HTML.')
         }
         return
       }
@@ -568,9 +722,9 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
         if (win) {
           win.document.write(html)
           win.document.close()
-          appendTerminal('output', 'CSS preview opened in new tab.')
+          runOut('output', 'CSS preview opened in new tab.')
         } else {
-          appendTerminal('error', 'Allow pop-ups to preview CSS.')
+          runOut('error', 'Allow pop-ups to preview CSS.')
         }
         return
       }
@@ -578,19 +732,19 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
         await runViaPiston(
           lang,
           code,
-          (out) => appendTerminal('output', out),
-          (err) => appendTerminal('error', err)
+          (out) => runOut('output', out),
+          (err) => runOut('error', err)
         )
         return
       }
-      appendTerminal('output', `Run not available for ${lang}. Use Download to save and run locally.`)
+      runOut('output', `Run not available for ${lang}. Use Download to save and run locally.`)
     } catch (e: unknown) {
       logger.error('Workspace run failed', 'WorkspacePage', e)
-      appendTerminal('error', `Error: ${e instanceof Error ? e.message : 'Unknown'}`)
+      runOut('error', `Error: ${e instanceof Error ? e.message : 'Unknown'}`)
     } finally {
       setRunLoading(false)
     }
-  }, [runCode, runLanguage, workspaceFiles, appendTerminal, shell, pythonPackages])
+  }, [runCode, runLanguage, workspaceFiles, appendTerminal, shell, pythonPackages, activePath])
 
   const handleRunAll = useCallback(async () => {
     const entry = ['main.js', 'index.js', 'app.js', 'index.ts', 'main.ts'].find((p) => workspaceFiles[p])
@@ -848,6 +1002,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                 key={activeTabId}
                 height="100%"
                 language={activeLanguage}
+                path={`file:///workspace/${activePath}`}
                 value={activeFileContent}
                 onChange={(value) => updateActiveFileContent(value ?? '')}
                 theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
@@ -860,9 +1015,29 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                   automaticLayout: true,
                   padding: { top: 12 },
                 }}
-                onMount={(editor) => {
+                onMount={(editor, monaco) => {
                   monacoRef.current = editor
+                  monacoInstanceRef.current = monaco
                   editor.onDidChangeCursorPosition((e) => setCursorPosition({ line: e.position.lineNumber, column: e.position.column }))
+                  const updateMarkers = () => {
+                    try {
+                      const all = (monaco.editor as { getModelMarkers: (f?: { resource?: unknown; owner?: string }) => Array<{ resource: { path: string }; severity: number; startLineNumber: number; startColumn: number; message: string }> }).getModelMarkers?.({})
+                      if (Array.isArray(all)) {
+                        setEditorMarkers(
+                          all.map((m) => ({
+                            resource: m.resource?.path ?? String(m.resource),
+                            severity: m.severity ?? 8,
+                            line: m.startLineNumber ?? 1,
+                            column: m.startColumn ?? 1,
+                            message: m.message ?? '',
+                          }))
+                        )
+                      }
+                    } catch (_) {}
+                  }
+                  markersDisposableRef.current?.dispose()
+                  markersDisposableRef.current = (monaco.editor as { onDidChangeMarkers: (l: (uris: unknown) => void) => { dispose: () => void } }).onDidChangeMarkers?.(() => updateMarkers()) ?? null
+                  updateMarkers()
                 }}
               />
             ) : (
@@ -957,10 +1132,56 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                   </div>
                 )}
                 {activePanel === 'output' && (
-                  <div className="p-4 text-sm text-muted-foreground">Output (run code to see results in Terminal).</div>
+                  <div className="flex h-full flex-col overflow-hidden p-2">
+                    <div className="flex justify-end gap-2 pb-2">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setOutputContent('')}>
+                        Clear
+                      </Button>
+                    </div>
+                    <pre className="min-h-0 flex-1 overflow-auto rounded border border-border bg-zinc-900/50 p-3 font-mono text-xs text-green-400 whitespace-pre-wrap">
+                      {outputContent || 'Run code to see output here. Same run output also appears in the Terminal.'}
+                    </pre>
+                  </div>
                 )}
                 {activePanel === 'problems' && (
-                  <div className="p-4 text-sm text-muted-foreground">No problems detected.</div>
+                  <div className="flex h-full flex-col overflow-hidden">
+                    <div className="border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
+                      {editorMarkers.length} problem{editorMarkers.length !== 1 ? 's' : ''}
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-auto p-2">
+                      {editorMarkers.length === 0 ? (
+                        <p className="p-4 text-sm text-muted-foreground">No problems detected.</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {editorMarkers.map((m, i) => {
+                            const path = m.resource.replace(/^file:\/\/\/workspace\//, '').replace(/^\/workspace\//, '') || m.resource
+                            const severityLabel = m.severity === 8 ? 'Error' : m.severity === 4 ? 'Warning' : 'Info'
+                            return (
+                              <li key={i}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    openFile(path)
+                                    setTimeout(() => {
+                                      monacoRef.current?.revealLineInCenter?.(m.line)
+                                      monacoRef.current?.setPosition?.({ lineNumber: m.line, column: m.column })
+                                    }, 100)
+                                  }}
+                                  className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/80"
+                                >
+                                  <span className={m.severity === 8 ? 'text-red-400' : m.severity === 4 ? 'text-amber-400' : 'text-blue-400'}>
+                                    {severityLabel}
+                                  </span>
+                                  <span className="truncate font-mono text-muted-foreground">{path}:{m.line}:{m.column}</span>
+                                  <span className="min-w-0 flex-1 truncate">{m.message}</span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
