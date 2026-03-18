@@ -36,14 +36,14 @@ export function DashboardHeader({ user, profile }: DashboardHeaderProps) {
   const initials = displayName.slice(0, 2).toUpperCase()
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 h-4" />
+    <header className="flex h-14 min-h-[3.5rem] shrink-0 items-center gap-1 border-b px-3 sm:gap-2 sm:px-4">
+      <SidebarTrigger className="-ml-1 size-10 min-h-10 min-w-10 sm:size-7 sm:min-h-0 sm:min-w-0" />
+      <Separator orientation="vertical" className="mr-1 h-4 sm:mr-2" />
       
-      <div className="flex flex-1 items-center justify-end gap-2">
-        <ThemeToggle />
+      <div className="flex flex-1 items-center justify-end gap-1 sm:gap-2">
+        <ThemeToggle className="size-10 min-h-10 min-w-10 sm:size-9 sm:min-h-0 sm:min-w-0" />
         
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative size-10 min-h-10 min-w-10 sm:size-9">
           <Bell className="h-4 w-4" />
           <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
           <span className="sr-only">Notifications</span>
@@ -51,18 +51,18 @@ export function DashboardHeader({ user, profile }: DashboardHeaderProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-              <Avatar className="h-8 w-8">
+            <Button variant="ghost" className="relative size-10 min-h-10 min-w-10 rounded-full sm:size-8 sm:min-h-0 sm:min-w-0">
+              <Avatar className="h-8 w-8 sm:h-8 sm:w-8">
                 <AvatarImage src={profile?.avatar_url || undefined} alt={displayName} />
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
+          <DropdownMenuContent className="w-56 max-w-[calc(100vw-2rem)]" align="end" forceMount>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{displayName}</p>
-                <p className="text-xs leading-none text-muted-foreground">
+                <p className="truncate text-sm font-medium leading-none">{displayName}</p>
+                <p className="truncate text-xs leading-none text-muted-foreground">
                   {user.email}
                 </p>
               </div>

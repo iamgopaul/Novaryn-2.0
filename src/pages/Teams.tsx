@@ -50,12 +50,12 @@ export function Teams() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Teams</h1>
-          <p className="text-muted-foreground">Collaborate with others on projects</p>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Teams</h1>
+          <p className="text-sm text-muted-foreground sm:text-base">Collaborate with others on projects</p>
         </div>
-        <Button asChild>
+        <Button asChild className="w-full shrink-0 sm:w-auto">
           <Link to="/teams/new"><Plus className="mr-2 h-4 w-4" />Create Team</Link>
         </Button>
       </div>

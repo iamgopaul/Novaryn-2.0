@@ -33,10 +33,10 @@ export function Dashboard() {
   const healthyCount = projects.filter((p) => p.health === 'healthy').length
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-        <p className="text-muted-foreground">Welcome back. Here&apos;s what&apos;s happening with your projects.</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Overview</h1>
+        <p className="text-sm text-muted-foreground sm:text-base">Welcome back. Here&apos;s what&apos;s happening with your projects.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -72,12 +72,12 @@ export function Dashboard() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Recent Projects</CardTitle>
             <CardDescription>Your latest project updates</CardDescription>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto">
             <Link to="/projects/new">
               <Plus className="mr-2 h-4 w-4" />
               New Project

@@ -35,7 +35,7 @@ export function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
+        <div className="container mx-auto flex h-14 min-h-[3.5rem] items-center justify-between gap-2 px-3 sm:h-16 sm:px-4">
           <Link to="/" className="flex items-center gap-2">
             <NovarynLogo className="h-8 w-8" />
             <span className="text-xl font-bold">Novaryn</span>
@@ -55,10 +55,10 @@ export function Home() {
         </div>
       </header>
 
-      <section className="relative overflow-hidden bg-gradient-to-b from-primary/5 to-background py-24 md:py-32">
+      <section className="relative overflow-hidden bg-gradient-to-b from-primary/5 to-background py-16 sm:py-24 md:py-32">
         <div className="container mx-auto px-4 text-center">
           <div className="mx-auto max-w-3xl">
-            <h1 className="text-balance text-4xl font-bold tracking-tight md:text-6xl">
+            <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl md:text-6xl">
               Your All-in-One <span className="text-primary">Developer Hub</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl">
@@ -79,9 +79,9 @@ export function Home() {
         </div>
       </section>
 
-      <section className="border-y bg-muted/30 py-12">
+      <section className="border-y bg-muted/30 py-8 sm:py-12">
         <div className="container mx-auto px-4">
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 md:gap-16">
             {tools.map((t) => (
               <div key={t.name} className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -97,10 +97,10 @@ export function Home() {
         </div>
       </section>
 
-      <section className="py-24">
+      <section className="py-16 sm:py-24">
         <div className="container mx-auto px-4">
-          <div className="mx-auto mb-16 max-w-2xl text-center">
-            <h2 className="text-balance text-3xl font-bold tracking-tight md:text-4xl">Everything you need to build great software</h2>
+          <div className="mx-auto mb-10 max-w-2xl text-center sm:mb-16">
+            <h2 className="text-balance text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl">Everything you need to build great software</h2>
             <p className="mt-4 text-pretty text-muted-foreground">
               Novaryn combines powerful development tools, team collaboration, and AI assistance into one seamless platform.
             </p>
@@ -123,7 +123,7 @@ export function Home() {
         </div>
       </section>
 
-      <section className="bg-primary py-24 text-primary-foreground">
+      <section className="bg-primary py-16 text-primary-foreground sm:py-24">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-balance text-3xl font-bold tracking-tight md:text-4xl">Ready to transform your development workflow?</h2>
           <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/80">
@@ -135,9 +135,9 @@ export function Home() {
         </div>
       </section>
 
-      <footer className="border-t py-12">
+      <footer className="border-t py-8 sm:py-12">
         <div className="container mx-auto px-4">
-          <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
+          <div className="flex flex-col items-center justify-between gap-4 text-center sm:gap-6 md:flex-row md:text-left">
             <div className="flex items-center gap-2">
               <NovarynLogo className="h-6 w-6" />
               <span className="font-semibold">Novaryn</span>

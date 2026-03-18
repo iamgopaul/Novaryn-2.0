@@ -45,8 +45,8 @@ export function Community() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Community</h1>
-        <p className="text-muted-foreground">Connect with other developers and share your work</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Community</h1>
+        <p className="text-sm text-muted-foreground sm:text-base">Connect with other developers and share your work</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <Card>

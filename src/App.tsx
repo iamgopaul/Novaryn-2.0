@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { ReactiveBackground } from '@/components/reactive-background'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { Home } from '@/pages/Home'
 import { About } from '@/pages/About'
@@ -30,39 +31,44 @@ import { Placeholder } from '@/pages/Placeholder'
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/about" element={<About />} />
-      <Route path="/auth/login" element={<Login />} />
-      <Route path="/auth/sign-up" element={<SignUp />} />
-      <Route path="/auth/sign-up-success" element={<SignUpSuccess />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/auth/error" element={<Placeholder />} />
+    <>
+      <ReactiveBackground />
+      <div className="relative z-10 min-h-screen">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/auth/login" element={<Login />} />
+          <Route path="/auth/sign-up" element={<SignUp />} />
+          <Route path="/auth/sign-up-success" element={<SignUpSuccess />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/auth/error" element={<Placeholder />} />
 
-      <Route element={<DashboardLayout />}>
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="projects/new" element={<NewProject />} />
-        <Route path="tools" element={<Tools />} />
-        <Route path="tools/editor" element={<EditorPage />} />
-        <Route path="tools/terminal" element={<TerminalPage />} />
-        <Route path="tools/docs" element={<DocsPage />} />
-        <Route path="tools/snippets" element={<SnippetsPage />} />
-        <Route path="teams" element={<Teams />} />
-        <Route path="teams/new" element={<NewTeam />} />
-        <Route path="teams/:id" element={<TeamDetail />} />
-        <Route path="community" element={<Community />} />
-        <Route path="chatbot" element={<ChatbotPage />} />
-        <Route path="messages" element={<MessagesList />} />
-        <Route path="messages/:userId" element={<Conversation />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="settings/profile" element={<SettingsProfile />} />
-        <Route path="settings/security" element={<SettingsSecurity />} />
-        <Route path="settings/notifications" element={<SettingsNotifications />} />
-        <Route path="settings/appearance" element={<SettingsAppearance />} />
-      </Route>
+          <Route element={<DashboardLayout />}>
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="projects" element={<Projects />} />
+            <Route path="projects/new" element={<NewProject />} />
+            <Route path="tools" element={<Tools />} />
+            <Route path="tools/editor" element={<EditorPage />} />
+            <Route path="tools/terminal" element={<TerminalPage />} />
+            <Route path="tools/docs" element={<DocsPage />} />
+            <Route path="tools/snippets" element={<SnippetsPage />} />
+            <Route path="teams" element={<Teams />} />
+            <Route path="teams/new" element={<NewTeam />} />
+            <Route path="teams/:id" element={<TeamDetail />} />
+            <Route path="community" element={<Community />} />
+            <Route path="chatbot" element={<ChatbotPage />} />
+            <Route path="messages" element={<MessagesList />} />
+            <Route path="messages/:userId" element={<Conversation />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="settings/profile" element={<SettingsProfile />} />
+            <Route path="settings/security" element={<SettingsSecurity />} />
+            <Route path="settings/notifications" element={<SettingsNotifications />} />
+            <Route path="settings/appearance" element={<SettingsAppearance />} />
+          </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </>
   )
 }
