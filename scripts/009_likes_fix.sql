@@ -25,7 +25,7 @@ EXCEPTION
   WHEN OTHERS THEN NULL;
 END $$;
 
--- 4) Trigger function: on INSERT into post_likes, increment posts.likes_count
+-- 4) Trigger: set likes_count from actual row count (avoids double-count if trigger fires twice)
 CREATE OR REPLACE FUNCTION public.post_likes_after_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -34,13 +34,13 @@ SET search_path = public
 AS $$
 BEGIN
   UPDATE public.posts
-  SET likes_count = COALESCE(likes_count, 0) + 1
+  SET likes_count = (SELECT COUNT(*)::integer FROM public.post_likes WHERE post_id = NEW.post_id)
   WHERE id = NEW.post_id;
   RETURN NEW;
 END;
 $$;
 
--- 5) Trigger function: on DELETE from post_likes, decrement posts.likes_count
+-- 5) Trigger: set likes_count from actual row count after delete
 CREATE OR REPLACE FUNCTION public.post_likes_after_delete()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -49,7 +49,7 @@ SET search_path = public
 AS $$
 BEGIN
   UPDATE public.posts
-  SET likes_count = GREATEST(COALESCE(likes_count, 0) - 1, 0)
+  SET likes_count = (SELECT COUNT(*)::integer FROM public.post_likes WHERE post_id = OLD.post_id)
   WHERE id = OLD.post_id;
   RETURN OLD;
 END;
