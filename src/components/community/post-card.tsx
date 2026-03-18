@@ -5,8 +5,9 @@ import { Post } from '@/lib/types'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Textarea } from '@/components/ui/textarea'
 import { formatDistanceToNow } from 'date-fns'
-import { Heart, MessageCircle, Repeat2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Heart, MessageCircle, Repeat2, MoreHorizontal, Trash2, Send } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+
+type CommentRow = {
+  id: string
+  post_id: string
+  user_id: string
+  content: string
+  created_at: string
+  profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }
+}
 
 interface PostCardProps {
   post: Omit<Post, 'profile' | 'original_post'> & {
@@ -30,26 +40,83 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const [isLiked, setIsLiked] = useState(post.is_liked || false)
   const [likesCount, setLikesCount] = useState(post.likes_count)
   const [loading, setLoading] = useState(false)
+  const [showComments, setShowComments] = useState(false)
+  const [comments, setComments] = useState<CommentRow[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [commentSending, setCommentSending] = useState(false)
+  const [commentsCount, setCommentsCount] = useState(post.comments_count ?? 0)
   const supabase = createClient()
 
   useEffect(() => {
     setIsLiked(!!post.is_liked)
     setLikesCount(post.likes_count ?? 0)
-  }, [post.id, post.is_liked, post.likes_count])
+    setCommentsCount(post.comments_count ?? 0)
+  }, [post.id, post.is_liked, post.likes_count, post.comments_count])
 
   const isOwner = currentUserId === post.user_id
   const profile = post.profile
   const isRepost = !!post.repost_of && !!post.original_post
+  const targetPostId = post.repost_of || post.id
+
+  useEffect(() => {
+    if (!showComments) return
+    const load = async () => {
+      const { data } = await supabase
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', targetPostId)
+        .order('created_at', { ascending: true })
+      const rows = (data || []) as CommentRow[]
+      const userIds = [...new Set(rows.map((c) => c.user_id))]
+      const { data: profiles } = userIds.length
+        ? await supabase.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds)
+        : { data: [] as CommentRow['profile'][] }
+      const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+      setComments(rows.map((c) => ({ ...c, profile: profileMap.get(c.user_id) })))
+    }
+    load()
+  }, [showComments, targetPostId, supabase])
+
+  const handleAddComment = async () => {
+    const text = commentText.trim()
+    if (!text || !currentUserId || commentSending) return
+    setCommentSending(true)
+    const { error } = await supabase.from('post_comments').insert({
+      post_id: targetPostId,
+      user_id: currentUserId,
+      content: text,
+    })
+    if (!error) {
+      setCommentText('')
+      setCommentsCount((n) => n + 1)
+      const { data } = await supabase
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', targetPostId)
+        .order('created_at', { ascending: true })
+      const rows = (data || []) as CommentRow[]
+      const userIds = [...new Set(rows.map((c) => c.user_id))]
+      const { data: profiles } = userIds.length
+        ? await supabase.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds)
+        : { data: [] as CommentRow['profile'][] }
+      const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+      setComments(rows.map((c) => ({ ...c, profile: profileMap.get(c.user_id) })))
+    }
+    setCommentSending(false)
+  }
 
   const handleRepost = async () => {
     if (loading || !currentUserId) return
     setLoading(true)
     const targetId = post.repost_of || post.id
-    await supabase.from('posts').insert({
+    const { error } = await supabase.from('posts').insert({
       user_id: currentUserId,
       content: '',
       repost_of: targetId,
     })
+    if (error) {
+      console.error('Error creating repost', error)
+    }
     setLoading(false)
   }
 
@@ -58,20 +125,28 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     setLoading(true)
 
     if (isLiked) {
-      await supabase
+      const { error } = await supabase
         .from('post_likes')
         .delete()
         .eq('post_id', post.id)
         .eq('user_id', currentUserId)
-      setIsLiked(false)
-      setLikesCount(prev => Math.max(0, prev - 1))
+      if (error) {
+        console.error('Error unliking post', error)
+      } else {
+        setIsLiked(false)
+        setLikesCount(prev => Math.max(0, prev - 1))
+      }
     } else {
-      await supabase.from('post_likes').insert({
+      const { error } = await supabase.from('post_likes').insert({
         post_id: post.id,
         user_id: currentUserId,
       })
-      setIsLiked(true)
-      setLikesCount(prev => prev + 1)
+      if (error) {
+        console.error('Error liking post', error)
+      } else {
+        setIsLiked(true)
+        setLikesCount(prev => prev + 1)
+      }
     }
 
     setLoading(false)
@@ -154,15 +229,62 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             <Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />
             {likesCount}
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2"
+            onClick={() => setShowComments((v) => !v)}
+          >
             <MessageCircle className="h-4 w-4" />
-            {post.comments_count}
+            {commentsCount}
           </Button>
           <Button variant="ghost" size="sm" className="gap-2" onClick={handleRepost} disabled={!currentUserId || loading}>
             <Repeat2 className="h-4 w-4" />
             {post.reposts_count}
           </Button>
         </div>
+
+        {showComments && (
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Comments</p>
+            {comments.map((c) => (
+              <div key={c.id} className="flex gap-2">
+                <Avatar className="h-7 w-7 shrink-0">
+                  <AvatarImage src={c.profile?.avatar_url || undefined} />
+                  <AvatarFallback className="text-xs">
+                    {c.profile?.display_name?.slice(0, 2).toUpperCase() || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">
+                    {c.profile?.display_name || 'User'} · {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                  </p>
+                  <p className="text-sm whitespace-pre-wrap">{c.content}</p>
+                </div>
+              </div>
+            ))}
+            {currentUserId && (
+              <div className="flex gap-2 pt-2">
+                <Textarea
+                  placeholder="Add a comment..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  rows={2}
+                  className="min-h-[60px] resize-none"
+                  disabled={commentSending}
+                />
+                <Button
+                  size="icon"
+                  className="shrink-0 self-end"
+                  onClick={handleAddComment}
+                  disabled={!commentText.trim() || commentSending}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
