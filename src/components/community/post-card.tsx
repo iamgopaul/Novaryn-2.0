@@ -40,26 +40,27 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const [isLiked, setIsLiked] = useState(post.is_liked || false)
   const [likesCount, setLikesCount] = useState(post.likes_count)
   const [loading, setLoading] = useState(false)
-  const [showComments, setShowComments] = useState(false)
   const [comments, setComments] = useState<CommentRow[]>([])
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
-  const [commentsCount, setCommentsCount] = useState(post.comments_count ?? 0)
   const supabase = createClient()
 
   useEffect(() => {
     setIsLiked(!!post.is_liked)
     setLikesCount(post.likes_count ?? 0)
-    setCommentsCount(post.comments_count ?? 0)
-  }, [post.id, post.is_liked, post.likes_count, post.comments_count])
+  }, [post.id, post.is_liked, post.likes_count])
 
   const isOwner = currentUserId === post.user_id
   const profile = post.profile
   const isRepost = !!post.repost_of && !!post.original_post
-  const targetPostId = post.repost_of || post.id
+  const targetPostId = post.id
+
+  const handleGoToOriginal = () => {
+    if (!post.original_post) return
+    navigate(`#post-${post.original_post.id}`)
+  }
 
   useEffect(() => {
-    if (!showComments) return
     const load = async () => {
       const { data } = await supabase
         .from('post_comments')
@@ -78,7 +79,7 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
       setComments(rows.map((c) => ({ ...c, profile: profileMap.get(c.user_id) })))
     }
     load()
-  }, [showComments, targetPostId, supabase])
+  }, [targetPostId, supabase])
 
   const handleAddComment = async () => {
     const text = commentText.trim()
@@ -91,7 +92,6 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     })
     if (!error) {
       setCommentText('')
-      setCommentsCount((n) => n + 1)
       const { data } = await supabase
         .from('post_comments')
         .select('*')
@@ -214,9 +214,21 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {isRepost ? (
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="whitespace-pre-wrap">{post.original_post?.content}</p>
-          </div>
+          <button
+            type="button"
+            onClick={handleGoToOriginal}
+            className="w-full text-left rounded-xl border border-border/80 bg-muted/40 p-3 sm:p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors"
+          >
+            {post.original_post ? (
+              <p className="whitespace-pre-wrap text-sm sm:text-base text-foreground">
+                {post.original_post.content}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                Original post was removed.
+              </p>
+            )}
+          </button>
         ) : (
           <p className="whitespace-pre-wrap">{post.content}</p>
         )}
@@ -239,10 +251,9 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             variant="ghost"
             size="sm"
             className="gap-2"
-            onClick={() => setShowComments((v) => !v)}
           >
             <MessageCircle className="h-4 w-4" />
-            {commentsCount}
+            {comments.length}
           </Button>
           <Button variant="ghost" size="sm" className="gap-2" onClick={handleRepost} disabled={!currentUserId || loading}>
             <Repeat2 className="h-4 w-4" />
@@ -250,47 +261,45 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
           </Button>
         </div>
 
-        {showComments && (
-          <div className="border-t pt-4 space-y-3">
-            <p className="text-sm font-medium text-muted-foreground">Comments</p>
-            {comments.map((c) => (
-              <div key={c.id} className="flex gap-2">
-                <Avatar className="h-7 w-7 shrink-0">
-                  <AvatarImage src={c.profile?.avatar_url || undefined} />
-                  <AvatarFallback className="text-xs">
-                    {c.profile?.display_name?.slice(0, 2).toUpperCase() || 'U'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-muted-foreground">
-                    {c.profile?.display_name || 'User'} · {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
-                  </p>
-                  <p className="text-sm whitespace-pre-wrap">{c.content}</p>
-                </div>
+        <div className="border-t pt-4 space-y-3">
+          <p className="text-sm font-medium text-muted-foreground">Comments</p>
+          {comments.map((c) => (
+            <div key={c.id} className="flex gap-2">
+              <Avatar className="h-7 w-7 shrink-0">
+                <AvatarImage src={c.profile?.avatar_url || undefined} />
+                <AvatarFallback className="text-xs">
+                  {c.profile?.display_name?.slice(0, 2).toUpperCase() || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">
+                  {c.profile?.display_name || 'User'} · {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                </p>
+                <p className="text-sm whitespace-pre-wrap">{c.content}</p>
               </div>
-            ))}
-            {currentUserId && (
-              <div className="flex gap-2 pt-2">
-                <Textarea
-                  placeholder="Add a comment..."
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  rows={2}
-                  className="min-h-[60px] resize-none"
-                  disabled={commentSending}
-                />
-                <Button
-                  size="icon"
-                  className="shrink-0 self-end"
-                  onClick={handleAddComment}
-                  disabled={!commentText.trim() || commentSending}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          ))}
+          {currentUserId && (
+            <div className="flex gap-2 pt-2">
+              <Textarea
+                placeholder="Add a comment..."
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                rows={2}
+                className="min-h-[60px] resize-none"
+                disabled={commentSending}
+              />
+              <Button
+                size="icon"
+                className="shrink-0 self-end"
+                onClick={handleAddComment}
+                disabled={!commentText.trim() || commentSending}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

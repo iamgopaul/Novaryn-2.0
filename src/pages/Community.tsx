@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { CreatePostForm } from '@/components/community/create-post-form'
@@ -21,8 +22,11 @@ export function Community() {
   const [userId, setUserId] = useState<string | undefined>()
   const [totalPosts, setTotalPosts] = useState(0)
   const [totalUsers, setTotalUsers] = useState(0)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
+  const location = useLocation()
+  const postRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   useEffect(() => {
     const load = async () => {
@@ -82,6 +86,25 @@ export function Community() {
     }
     load()
   }, [])
+
+  // Scroll to and briefly highlight a specific post when hash like #post-<id> is present
+  useEffect(() => {
+    if (!location.hash?.startsWith('#post-')) return
+    const id = location.hash.replace('#post-', '')
+    if (!id) return
+
+    setHighlightId(id)
+    const el = postRefs.current[id]
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
+    const timeout = setTimeout(() => {
+      setHighlightId(null)
+    }, 1600)
+
+    return () => clearTimeout(timeout)
+  }, [location.hash])
 
   // Real-time: posts
   useEffect(() => {
@@ -228,7 +251,18 @@ export function Community() {
           {posts.length > 0 ? (
             <div className="space-y-4">
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} currentUserId={userId} />
+                <div
+                  key={post.id}
+                  id={`post-${post.id}`}
+                  ref={(el) => {
+                    postRefs.current[post.id] = el
+                  }}
+                  className={`transition-shadow ${
+                    highlightId === post.id ? 'ring-2 ring-primary/60 bg-primary/5 rounded-xl' : ''
+                  }`}
+                >
+                  <PostCard post={post} currentUserId={userId} />
+                </div>
               ))}
             </div>
           ) : (
