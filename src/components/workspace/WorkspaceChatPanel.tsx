@@ -71,9 +71,10 @@ function parseWorkspaceActions(text: string): {
     }
   }
 
-  const runCmdRegex = /RUN_CMD\s+(.+?)(?=\n(?:RUN_CMD|WRITE_FILE|DELETE_FILE)|\n\n|$)/gs
+  // RUN_CMD: capture only the first line so we never include following prose
+  const runCmdRegex = /RUN_CMD\s+([^\n]+?)(?=\s*\n|$)/g
   while ((m = runCmdRegex.exec(text)) !== null) {
-    const cmd = m[1].trim().replace(/\n.*/s, '').trim()
+    const cmd = m[1].trim().replace(/\s*$/, '')
     if (cmd) {
       runCommands.push(cmd)
       displayText = displayText.replace(m[0], `*[Ran: \`${cmd}\`]*\n\n`)

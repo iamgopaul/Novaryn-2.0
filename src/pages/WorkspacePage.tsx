@@ -985,11 +985,15 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                   activePath,
                 }}
                 onWriteFile={(path, content) => {
+                  appendTerminal('output', `[Nova] Wrote to \`${path}\``)
                   setWorkspaceFiles((prev) => ({ ...prev, [path]: content }))
                   openFile(path)
                 }}
                 onDeleteFile={deleteFile}
-                onRunCommand={(command) => executeCommand(command)}
+                onRunCommand={(command) => {
+                  appendTerminal('output', `[Nova] Running: ${command}`)
+                  executeCommand(command)
+                }}
                 onOpenFile={openFile}
                 onCollapse={() => setChatPanelOpen(false)}
               />
