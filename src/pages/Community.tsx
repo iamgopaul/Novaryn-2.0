@@ -261,7 +261,15 @@ export function Community() {
                     highlightId === post.id ? 'ring-2 ring-primary/60 bg-primary/5 rounded-xl' : ''
                   }`}
                 >
-                  <PostCard post={post} currentUserId={userId} />
+                  <PostCard
+                    post={post}
+                    currentUserId={userId}
+                    onLikeChange={(postId, isLiked) => {
+                      setPosts((prev) =>
+                        prev.map((p) => (p.id === postId ? { ...p, is_liked: isLiked } : p))
+                      )
+                    }}
+                  />
                 </div>
               ))}
             </div>

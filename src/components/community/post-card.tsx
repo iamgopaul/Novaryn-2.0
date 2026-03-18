@@ -33,9 +33,10 @@ interface PostCardProps {
     }
   }
   currentUserId?: string
+  onLikeChange?: (postId: string, isLiked: boolean) => void
 }
 
-export function PostCard({ post, currentUserId }: PostCardProps) {
+export function PostCard({ post, currentUserId, onLikeChange }: PostCardProps) {
   const navigate = useNavigate()
   const [isLiked, setIsLiked] = useState(!!post.is_liked)
   const [likesCount, setLikesCount] = useState(Number(post.likes_count) || 0)
@@ -153,27 +154,29 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
           .delete()
           .eq('post_id', post.id)
           .eq('user_id', currentUserId)
-        if (error) {
-          console.error('Error unliking post', error)
-        } else {
-          setIsLiked(false)
-        }
+      if (error) {
+        console.error('Error unliking post', error)
       } else {
-        const { error } = await supabase.from('post_likes').insert({
-          post_id: post.id,
-          user_id: currentUserId,
-        })
-        // 23505 = unique_violation (already liked) — don't treat as error so UI doesn't break
-        if (error && (error as { code?: string }).code !== '23505') {
-          console.error('Error liking post', error)
-        } else {
-          setIsLiked(true)
-        }
+        setIsLiked(false)
+        onLikeChange?.(post.id, false)
       }
+    } else {
+      const { error } = await supabase.from('post_likes').insert({
+        post_id: post.id,
+        user_id: currentUserId,
+      })
+      // 23505 = unique_violation (already liked) — don't treat as error so UI doesn't break
+      if (error && (error as { code?: string }).code !== '23505') {
+        console.error('Error liking post', error)
+      } else {
+        setIsLiked(true)
+        onLikeChange?.(post.id, true)
+      }
+    }
 
-      // Refetch likes_count from DB so display always matches (trigger updates posts.likes_count)
-      const { data } = await supabase.from('posts').select('likes_count').eq('id', post.id).single()
-      if (data?.likes_count != null) setLikesCount(data.likes_count)
+    // Refetch likes_count from DB so display always matches (trigger updates posts.likes_count)
+    const { data } = await supabase.from('posts').select('likes_count').eq('id', post.id).single()
+    if (data?.likes_count != null) setLikesCount(data.likes_count)
     } finally {
       setLoading(false)
       likeInProgressRef.current = false
