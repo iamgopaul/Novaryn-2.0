@@ -117,7 +117,9 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const openRepostComposer = () => {
     if (!currentUserId || loading) return
     setIsRepostComposerOpen(true)
-    setRepostText('')
+    // If this is already a repost with text, start from that text so
+    // reposting a repost “posts what you posted”.
+    setRepostText(post.content || '')
   }
 
   const submitRepost = async () => {
