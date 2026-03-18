@@ -40,7 +40,6 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if ((e.target as HTMLElement).closest('button')) return
       e.preventDefault()
 
       dragRef.current = {
