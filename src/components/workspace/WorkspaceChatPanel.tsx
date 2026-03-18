@@ -5,18 +5,22 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
-import { Bot, User, Send, Sparkles, MessageSquare, PanelRightClose } from 'lucide-react'
+import { Bot, User, Send, Sparkles, MessageSquare, PanelRightClose, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 
 type UIMessage = { id: string; role: string; parts?: Array<{ type: string; text?: string }> }
 
 function getMessageText(message: UIMessage): string {
-  if (!message.parts || !Array.isArray(message.parts)) return ''
-  return message.parts
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map((p) => p.text)
-    .join('')
+  if (message.parts && Array.isArray(message.parts)) {
+    const fromParts = message.parts
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map((p) => p.text)
+      .join('')
+    if (fromParts) return fromParts
+  }
+  const anyMsg = message as { content?: string; text?: string }
+  return anyMsg.content ?? anyMsg.text ?? ''
 }
 
 export interface WorkspaceContext {
@@ -47,12 +51,12 @@ function parseWorkspaceActions(text: string): {
   const runCommands: string[] = []
   let displayText = text
 
-  // WRITE_FILE path="..." then optional newlines then ```...``` block
-  const writeFileBlockRegex = /WRITE_FILE\s+path=(?:"([^"]*)"|'([^']*)')\s*\n([\s\S]*?)(?=\n(?:RUN_CMD|WRITE_FILE|DELETE_FILE)|\n\n|$)/g
+  // WRITE_FILE path="..." or path='...' or path=unquoted, then newline and optional code block
+  const writeFileBlockRegex = /WRITE_FILE\s+path=(?:"([^"]*)"|'([^']*)'|([^\s\n]+))\s*\n([\s\S]*?)(?=\n(?:RUN_CMD|WRITE_FILE|DELETE_FILE)|\n\n|$)/g
   let m: RegExpExecArray | null
   while ((m = writeFileBlockRegex.exec(text)) !== null) {
-    const path = (m[1] ?? m[2] ?? '').trim()
-    const raw = (m[3] ?? '').trim()
+    const path = (m[1] ?? m[2] ?? m[3] ?? '').trim()
+    const raw = (m[4] ?? '').trim()
     const codeBlock = raw.match(/```(?:\w*)\n?([\s\S]*?)```/)
     const content = codeBlock ? codeBlock[1].trim() : raw.replace(/^```\w*\n?/, '').replace(/\n?```$/, '').trim()
     if (path) {
@@ -61,10 +65,10 @@ function parseWorkspaceActions(text: string): {
     }
   }
 
-  // DELETE_FILE path="..."
-  const deleteFileRegex = /DELETE_FILE\s+path=(?:"([^"]*)"|'([^']*)')\s*(?=\n|$)/g
+  // DELETE_FILE path="..." or path='...' or path=unquoted
+  const deleteFileRegex = /DELETE_FILE\s+path=(?:"([^"]*)"|'([^']*)'|([^\s\n]+))(?=\s*\n|$)/g
   while ((m = deleteFileRegex.exec(text)) !== null) {
-    const path = (m[1] ?? m[2] ?? '').trim()
+    const path = (m[1] ?? m[2] ?? m[3] ?? '').trim()
     if (path) {
       deleteFiles.push(path)
       displayText = displayText.replace(m[0], `*[Deleted \`${path}\`]*\n\n`)
@@ -95,8 +99,8 @@ export function WorkspaceChatPanel({
 }: WorkspaceChatPanelProps) {
   const [input, setInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [resolvedMessages, setResolvedMessages] = useState<Record<string, 'accepted' | 'declined'>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lastParsedIdRef = useRef<string | null>(null)
   const contextRef = useRef(workspaceContext)
   contextRef.current = workspaceContext
 
@@ -118,14 +122,10 @@ export function WorkspaceChatPanel({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages])
 
-  // Parse last assistant message for WRITE_FILE / DELETE_FILE / RUN_CMD when stream finishes
-  useEffect(() => {
-    if (status === 'streaming' || status === 'submitted') return
-    const last = messages[messages.length - 1]
-    if (!last || last.role !== 'assistant') return
-    if (lastParsedIdRef.current === last.id) return
-    lastParsedIdRef.current = last.id
-    const text = getMessageText(last as UIMessage)
+  const applyActionsForMessage = (messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId)
+    if (!msg || msg.role !== 'assistant') return
+    const text = getMessageText(msg as UIMessage)
     if (!text) return
     const { writeFiles, deleteFiles, runCommands } = parseWorkspaceActions(text)
     deleteFiles.forEach((path) => onDeleteFile?.(path))
@@ -134,7 +134,12 @@ export function WorkspaceChatPanel({
       onOpenFile?.(path)
     })
     runCommands.forEach((cmd) => onRunCommand(cmd))
-  }, [messages, status, onWriteFile, onDeleteFile, onRunCommand, onOpenFile])
+    setResolvedMessages((prev) => ({ ...prev, [messageId]: 'accepted' }))
+  }
+
+  const declineActionsForMessage = (messageId: string) => {
+    setResolvedMessages((prev) => ({ ...prev, [messageId]: 'declined' }))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,7 +194,10 @@ export function WorkspaceChatPanel({
           <div className="space-y-3">
             {messages.map((msg) => {
               const text = getMessageText(msg as UIMessage)
-              const { displayText } = parseWorkspaceActions(text)
+              const { displayText, writeFiles, deleteFiles, runCommands } = parseWorkspaceActions(text)
+              const hasActions = writeFiles.length > 0 || deleteFiles.length > 0 || runCommands.length > 0
+              const resolution = resolvedMessages[msg.id]
+
               return (
                 <div key={msg.id} className={cn('flex gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {msg.role === 'assistant' && (
@@ -199,15 +207,61 @@ export function WorkspaceChatPanel({
                       </AvatarFallback>
                     </Avatar>
                   )}
-                  <div
-                    className={cn(
-                      'max-w-[90%] rounded-lg px-2.5 py-1.5 text-sm',
-                      msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
-                    )}
-                  >
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown>{msg.role === 'user' ? text : displayText}</ReactMarkdown>
+                  <div className={cn('flex max-w-[90%] flex-col gap-1.5', msg.role === 'user' ? 'items-end' : 'items-start')}>
+                    <div
+                      className={cn(
+                        'rounded-lg px-2.5 py-1.5 text-sm',
+                        msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                      )}
+                    >
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{msg.role === 'user' ? text : displayText}</ReactMarkdown>
+                      </div>
                     </div>
+                    {msg.role === 'assistant' && hasActions && (
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-background/80 px-2 py-1.5 text-xs">
+                        {resolution ? (
+                          <span
+                            className={cn(
+                              'font-medium',
+                              resolution === 'accepted' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'
+                            )}
+                          >
+                            {resolution === 'accepted' ? 'Applied' : 'Declined'}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground">
+                              {[
+                                writeFiles.length > 0 && `${writeFiles.length} file${writeFiles.length !== 1 ? 's' : ''}`,
+                                deleteFiles.length > 0 && `${deleteFiles.length} delete${deleteFiles.length !== 1 ? 's' : ''}`,
+                                runCommands.length > 0 && `${runCommands.length} command${runCommands.length !== 1 ? 's' : ''}`,
+                              ]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </span>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-6 gap-1 px-2 text-xs"
+                              onClick={() => applyActionsForMessage(msg.id)}
+                            >
+                              <Check className="h-3 w-3" />
+                              Accept
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => declineActionsForMessage(msg.id)}
+                            >
+                              <X className="h-3 w-3" />
+                              Decline
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {msg.role === 'user' && (
                     <Avatar className="h-6 w-6 shrink-0">
