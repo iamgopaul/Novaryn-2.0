@@ -13,6 +13,7 @@ import { NewProject } from '@/pages/NewProject'
 import { Tools } from '@/pages/Tools'
 import { EditorPage } from '@/pages/EditorPage'
 import { TerminalPage } from '@/pages/TerminalPage'
+import { WorkspacePage } from '@/pages/WorkspacePage'
 import { DocsPage } from '@/pages/DocsPage'
 import { SnippetsPage } from '@/pages/SnippetsPage'
 import { Teams } from '@/pages/Teams'
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="projects" element={<Projects />} />
             <Route path="projects/new" element={<NewProject />} />
             <Route path="tools" element={<Tools />} />
+            <Route path="workspace" element={<WorkspacePage />} />
             <Route path="tools/editor" element={<EditorPage />} />
             <Route path="tools/terminal" element={<TerminalPage />} />
             <Route path="tools/docs" element={<DocsPage />} />

@@ -23,11 +23,11 @@ import {
   Mail,
   Bot,
   Settings,
-  Layers,
   Code2,
   Terminal,
   FileText,
   Bookmark,
+  LayoutTemplate,
 } from 'lucide-react'
 
 interface DashboardSidebarProps {
@@ -38,6 +38,7 @@ interface DashboardSidebarProps {
 const mainNavItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
   { href: '/projects', icon: FolderKanban, label: 'Projects' },
+  { href: '/workspace', icon: LayoutTemplate, label: 'Workspace' },
   { href: '/tools', icon: Wrench, label: 'Tools' },
   { href: '/teams', icon: Users, label: 'Teams' },
 ]
