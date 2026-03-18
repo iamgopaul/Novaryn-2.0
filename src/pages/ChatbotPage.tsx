@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { User } from '@supabase/supabase-js'
@@ -10,7 +10,6 @@ export function ChatbotPage() {
   const [user, setUser] = useState<User | null>(null)
   const [conversations, setConversations] = useState<ChatConversation[]>([])
   const [searchParams] = useSearchParams()
-  const selectedFromUrl = searchParams.get('conversation')
   const supabase = createClient()
 
   useEffect(() => {
@@ -28,6 +27,9 @@ export function ChatbotPage() {
     init()
   }, [])
 
+  const selectedFromUrl = searchParams.get('conversation')
+  const effectiveSelectedId = selectedFromUrl ?? conversations[0]?.id ?? null
+
   if (!user) {
     return (
       <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
@@ -35,11 +37,6 @@ export function ChatbotPage() {
       </div>
     )
   }
-
-  const effectiveSelectedId = useMemo(
-    () => selectedFromUrl ?? conversations[0]?.id ?? null,
-    [selectedFromUrl, conversations]
-  )
 
   return (
     <div className="flex h-[calc(100vh-10rem)] gap-4">
