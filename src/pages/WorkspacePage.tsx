@@ -127,6 +127,21 @@ const PISTON_LANG: Record<string, { piston: string; filename: string }> = {
 
 const PISTON_API_URL = 'https://emkc.org/api/v2/piston/execute'
 
+// Judge0 CE: language_id from https://ce.judge0.com/languages (used when run-command unavailable, e.g. Vercel)
+const JUDGE0_LANG: Record<string, number> = {
+  java: 91,   // Java (JDK 17.0.6)
+  cpp: 54,    // C++ (GCC 9.2.0)
+  python: 71, // Python (3.8.1)
+  c: 50,      // C (GCC 9.2.0)
+  rust: 73,
+  go: 95,
+  csharp: 51,
+  javascript: 93,
+  typescript: 94,
+}
+const JUDGE0_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_JUDGE0_BASE_URL) || 'https://ce.judge0.com'
+const JUDGE0_AUTH = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_JUDGE0_AUTH_TOKEN : undefined
+
 /** Resolve import spec relative to fromPath; return workspace path (no leading slash). */
 function resolveImportPath(fromPath: string, importSpec: string): string {
   const spec = importSpec.replace(/^["']|["']$/g, '').trim()
@@ -235,6 +250,64 @@ async function runViaPiston(
     else if (!run?.stderr?.trim() && !compile?.stderr?.trim() && !data.message) onOutput('(Program ran with no output)')
   } catch (e) {
     onError(`Network error: ${e instanceof Error ? e.message : 'Unknown'}. Check connection or use Download to run locally.`)
+  }
+}
+
+/** Judge0 CE: run code when run-command API is unavailable (e.g. on Vercel). Status 3 = Accepted. */
+async function runViaJudge0(
+  langKey: string,
+  code: string,
+  onOutput: (out: string) => void,
+  onError: (err: string) => void
+): Promise<void> {
+  const languageId = JUDGE0_LANG[langKey]
+  if (languageId == null) {
+    onError(`Judge0 has no runner for ${langKey}. Use Download to run locally.`)
+    return
+  }
+  const label = langKey === 'cpp' ? 'C++' : langKey.charAt(0).toUpperCase() + langKey.slice(1)
+  onOutput(`Running ${label} (Judge0)...\n`)
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (JUDGE0_AUTH) headers['X-Auth-Token'] = JUDGE0_AUTH
+  try {
+    const res = await fetch(
+      `${JUDGE0_BASE}/submissions?base64_encoded=false&wait=true`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ source_code: code, language_id: languageId }),
+      }
+    )
+    const text = await res.text()
+    if (!res.ok) {
+      onError(`Judge0 API error: ${res.status}. ${text || 'Try again or use Download.'}`)
+      return
+    }
+    let data: {
+      stdout?: string | null
+      stderr?: string | null
+      compile_output?: string | null
+      message?: string | null
+      status?: { id: number; description?: string }
+    }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      onError('Invalid Judge0 response. Use Download to run locally.')
+      return
+    }
+    const statusId = data.status?.id
+    if (data.compile_output?.trim()) onOutput(`Compile:\n${data.compile_output.trim()}\n`)
+    if (data.stderr?.trim()) onError(data.stderr)
+    if (data.message?.trim() && statusId !== 3) onError(data.message)
+    if (statusId === 3) {
+      const out = (data.stdout ?? '').trim()
+      onOutput(out || '(Program ran with no output)')
+    } else if (statusId !== 6 && !data.stderr?.trim() && !data.compile_output?.trim()) {
+      onError(data.status?.description ?? `Execution failed (status ${statusId}). Use Download to run locally.`)
+    }
+  } catch (e) {
+    onError(`Judge0: ${e instanceof Error ? e.message : 'Network error'}. Check connection or use Download.`)
   }
 }
 
@@ -787,8 +860,6 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       if (lang === 'java' && entryFile) {
         const baseName = entryFile.replace(/\.java$/i, '')
         const runCmd = `javac ${entryFile} && java ${baseName}`
-        const pistonErrorMsg =
-          'Java run via cloud API is restricted. Start the API server with "bun run server" and install the JDK on your machine to run Java from the Run button or terminal.'
         try {
           runOut('output', 'Running Java...\n')
           const res = await fetch('/api/workspace/run-command', {
@@ -803,18 +874,12 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
             return
           }
-          if (res.status === 404 || res.status === 502) {
-            runOut('error', pistonErrorMsg)
-            return
-          }
         } catch (_) {}
-        runViaPiston('java', code, (o) => runOut('output', o), (e) => runOut('error', typeof e === 'string' && (e.includes('401') || e.includes('whitelist')) ? pistonErrorMsg : e)).catch(() => {})
+        await runViaJudge0('java', code, (o) => runOut('output', o), (e) => runOut('error', e))
         return
       }
       if (lang === 'cpp' && entryFile) {
         const runCmd = `g++ -o main ${entryFile} && ./main`
-        const pistonErrorMsg =
-          'C++ run via cloud API is restricted. Start the API server with "bun run server" and install g++ on your machine to run C++ from the Run button or terminal.'
         try {
           runOut('output', 'Running C++...\n')
           const res = await fetch('/api/workspace/run-command', {
@@ -829,12 +894,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             if (!data.stdout?.trim() && !data.stderr?.trim() && data.exitCode === 0) runOut('output', '(completed)')
             return
           }
-          if (res.status === 404 || res.status === 502) {
-            runOut('error', pistonErrorMsg)
-            return
-          }
         } catch (_) {}
-        runViaPiston('cpp', code, (o) => runOut('output', o), (e) => runOut('error', typeof e === 'string' && (e.includes('401') || e.includes('whitelist')) ? pistonErrorMsg : e)).catch(() => {})
+        await runViaJudge0('cpp', code, (o) => runOut('output', o), (e) => runOut('error', e))
         return
       }
       if (PISTON_LANG[lang]) {
