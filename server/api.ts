@@ -1,17 +1,14 @@
 /**
- * Bun API server for 2FA (and optional chat). Run with: bun run server
+ * Bun API server for 2FA and chat (Nova / Groq). Run with: bun run server
  * Vite dev proxy forwards /api/* to this server.
  *
- * 2FA uses BOTH:
- * - Supabase: stores 2FA codes (two_factor_codes) and profile.two_factor_enabled.
- *   The server needs SUPABASE_SERVICE_ROLE_KEY to read/update codes (RLS blocks anon).
- * - Resend: sends the 6-digit verification code to the user's email.
- *
- * Required .env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
- * SUPABASE_SERVICE_ROLE_KEY (for 2FA), RESEND_API_KEY.
+ * 2FA: Supabase (two_factor_codes) + Resend (email). Env: SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY.
+ * Chat: Groq. Env: GROQ_API_KEY.
  */
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { groq } from '@ai-sdk/groq'
+import { streamText, convertToModelMessages, type UIMessage } from 'ai'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -115,10 +112,33 @@ const server = Bun.serve({
     }
 
     if (url.pathname === '/api/chat' && req.method === 'POST') {
-      return Response.json(
-        { error: 'Set OPENAI_API_KEY and add chat handler in server/api.ts for AI chat' },
-        { status: 501 }
-      )
+      const groqKey = process.env.GROQ_API_KEY
+      if (!groqKey) {
+        return Response.json(
+          { error: 'GROQ_API_KEY is not set. Add it to .env for Nova chat.' },
+          { status: 500 }
+        )
+      }
+      try {
+        const body = (await req.json()) as { messages?: UIMessage[] }
+        const messages = body?.messages ?? []
+        if (!Array.isArray(messages) || messages.length === 0) {
+          return Response.json({ error: 'messages array is required' }, { status: 400 })
+        }
+        const modelMessages = await convertToModelMessages(messages)
+        const result = streamText({
+          model: groq('llama-3.3-70b-versatile'),
+          system: `You are Nova, the friendly and knowledgeable AI assistant for Novaryn, a developer hub platform. You help users with coding, debugging, documentation, best practices, and general programming questions. Be concise, clear, and supportive. When relevant, mention Novaryn's tools (projects, code editor, terminal, teams, community).`,
+          messages: modelMessages,
+        })
+        return result.toUIMessageStreamResponse()
+      } catch (e) {
+        console.error('Chat error:', e)
+        return Response.json(
+          { error: e instanceof Error ? e.message : 'Chat failed' },
+          { status: 500 }
+        )
+      }
     }
 
     return new Response('Not Found', { status: 404 })

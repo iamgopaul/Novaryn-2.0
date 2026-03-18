@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DashboardSidebar } from '@/components/dashboard/sidebar'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
+import { NovaChatBubble } from '@/components/chatbot/nova-chat-bubble'
 import { Profile } from '@/lib/types'
 
 export function DashboardLayout() {
@@ -46,6 +47,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </SidebarInset>
+      <NovaChatBubble userId={user.id} />
     </SidebarProvider>
   )
 }

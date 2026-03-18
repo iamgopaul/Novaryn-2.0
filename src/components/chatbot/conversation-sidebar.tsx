@@ -10,9 +10,10 @@ import { History, MessageSquare, Plus, Trash2 } from 'lucide-react'
 interface ConversationSidebarProps {
   conversations: ChatConversation[]
   userId?: string
+  onDelete?: (convId: string) => void
 }
 
-export function ConversationSidebar({ conversations, userId }: ConversationSidebarProps) {
+export function ConversationSidebar({ conversations, userId, onDelete }: ConversationSidebarProps) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const currentConvId = searchParams.get('conversation')
@@ -27,22 +28,9 @@ export function ConversationSidebar({ conversations, userId }: ConversationSideb
 
   const handleDeleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    
     const supabase = createClient()
-    
-    // Delete messages first
-    await supabase
-      .from('chat_messages')
-      .delete()
-      .eq('conversation_id', convId)
-    
-    // Then delete conversation
-    await supabase
-      .from('chat_conversations')
-      .delete()
-      .eq('id', convId)
-    
-    // If this was the current conversation, redirect
+    await supabase.from('chat_conversations').delete().eq('id', convId)
+    onDelete?.(convId)
     if (convId === currentConvId) {
       navigate('/chatbot')
     }

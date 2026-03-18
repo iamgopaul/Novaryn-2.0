@@ -12,11 +12,12 @@ Use this when linking via CLI (`vercel link`) or when confirming the project in 
 2. Vercel will detect the Vite app. Build settings from `vercel.json`:
    - **Build Command:** `bun run build`
    - **Output Directory:** `dist`
-3. Add **Environment Variables** (Settings → Environment Variables) for Production (and Preview if you want 2FA there):
+3. Add **Environment Variables** (Settings → Environment Variables) for Production (and Preview if you want 2FA and Nova there):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (for 2FA API)
    - `RESEND_API_KEY` (for 2FA emails)
+   - `GROQ_API_KEY` (for Nova AI chat; get one at [Groq Console](https://console.groq.com))
 
 ## CLI link (optional)
 
@@ -37,3 +38,4 @@ vercel --prod
 
 - The app is a Vite SPA; all non-API routes are rewritten to `index.html`.
 - 2FA is handled by Vercel serverless functions at `/api/auth/send-2fa` and `/api/auth/verify-2fa` (see `api/auth/` in the repo).
+- **Nova** (AI chat) is powered by Groq at `/api/chat`; set `GROQ_API_KEY` in Vercel for it to work in production.

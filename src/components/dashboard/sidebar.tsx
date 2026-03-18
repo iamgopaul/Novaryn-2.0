@@ -52,7 +52,7 @@ const toolItems = [
 const socialItems = [
   { href: '/community', icon: MessageCircle, label: 'Community' },
   { href: '/messages', icon: Mail, label: 'Messages' },
-  { href: '/chatbot', icon: Bot, label: 'AI Assistant' },
+  { href: '/chatbot', icon: Bot, label: 'Nova' },
 ]
 
 export function DashboardSidebar({ profile }: DashboardSidebarProps) {
