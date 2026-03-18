@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConversationList } from '@/components/messages/conversation-list'
@@ -11,42 +11,71 @@ interface Conversation {
   unreadCount: number
 }
 
+function buildConversations(
+  messages: Array<{ receiver_id: string; sender_id: string; sender: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; receiver: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; content: string; created_at: string; is_read: boolean }>,
+  currentUserId: string
+): Conversation[] {
+  const map = new Map<string, Conversation>()
+  messages.forEach((msg) => {
+    const isReceiver = msg.receiver_id === currentUserId
+    const partner = isReceiver ? msg.sender : msg.receiver
+    if (!partner) return
+    if (!map.has(partner.id)) {
+      map.set(partner.id, {
+        partner,
+        lastMessage: { content: msg.content, created_at: msg.created_at, sender_id: msg.sender_id },
+        unreadCount: isReceiver && !msg.is_read ? 1 : 0,
+      })
+    } else if (isReceiver && !msg.is_read) {
+      const c = map.get(partner.id)!
+      c.unreadCount++
+    }
+  })
+  return Array.from(map.values())
+}
+
 export function MessagesList() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+
+  const loadConversations = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    setCurrentUserId(user.id)
+
+    const { data: messages } = await supabase
+      .from('private_messages')
+      .select('*, sender:profiles!private_messages_sender_id_fkey(id, username, display_name, avatar_url), receiver:profiles!private_messages_receiver_id_fkey(id, username, display_name, avatar_url)')
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .order('created_at', { ascending: false })
+
+    setConversations(buildConversations(messages || [], user.id))
+  }
+
+  const loadRef = useRef(loadConversations)
+  loadRef.current = loadConversations
 
   useEffect(() => {
-    const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      setCurrentUserId(user.id)
+    loadRef.current()
+  }, [])
 
-      const { data: messages } = await supabase
-        .from('private_messages')
-        .select('*, sender:profiles!private_messages_sender_id_fkey(id, username, display_name, avatar_url), receiver:profiles!private_messages_receiver_id_fkey(id, username, display_name, avatar_url)')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-
-      const map = new Map<string, Conversation>()
-      messages?.forEach((msg: { receiver_id: string; sender_id: string; sender: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; receiver: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; content: string; created_at: string; is_read: boolean }): void => {
-        const isReceiver = msg.receiver_id === user.id
-        const partner = isReceiver ? msg.sender : msg.receiver
-        if (!partner) return
-        if (!map.has(partner.id)) {
-          map.set(partner.id, {
-            partner,
-            lastMessage: { content: msg.content, created_at: msg.created_at, sender_id: msg.sender_id },
-            unreadCount: isReceiver && !msg.is_read ? 1 : 0,
-          })
-        } else if (isReceiver && !msg.is_read) {
-          const c = map.get(partner.id)!
-          c.unreadCount++
+  // Real-time: new or updated messages refresh conversation list
+  useEffect(() => {
+    const channel = supabase
+      .channel('messages-list')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'private_messages' },
+        () => {
+          loadRef.current()
         }
-      })
-      setConversations(Array.from(map.values()))
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
     }
-    load()
   }, [])
 
   if (!currentUserId) return null

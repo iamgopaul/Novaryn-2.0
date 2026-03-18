@@ -21,9 +21,10 @@ interface MessageThreadProps {
   messages: Message[]
   currentUserId: string
   partnerId: string
+  onMessageSent?: (message: Message) => void
 }
 
-export function MessageThread({ messages, currentUserId, partnerId }: MessageThreadProps) {
+export function MessageThread({ messages, currentUserId, partnerId, onMessageSent }: MessageThreadProps) {
   const navigate = useNavigate()
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -39,15 +40,21 @@ export function MessageThread({ messages, currentUserId, partnerId }: MessageThr
   const handleSend = async () => {
     if (!newMessage.trim()) return
     setSending(true)
+    const content = newMessage.trim()
+    setNewMessage('')
 
-    const { error } = await supabase.from('private_messages').insert({
-      sender_id: currentUserId,
-      receiver_id: partnerId,
-      content: newMessage.trim(),
-    })
+    const { data, error } = await supabase
+      .from('private_messages')
+      .insert({
+        sender_id: currentUserId,
+        receiver_id: partnerId,
+        content,
+      })
+      .select()
+      .single()
 
-    if (!error) {
-      setNewMessage('')
+    if (!error && data) {
+      onMessageSent?.(data as Message)
     }
     setSending(false)
   }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Post } from '@/lib/types'
@@ -26,6 +26,11 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const [likesCount, setLikesCount] = useState(post.likes_count)
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
+
+  useEffect(() => {
+    setIsLiked(!!post.is_liked)
+    setLikesCount(post.likes_count ?? 0)
+  }, [post.id, post.is_liked, post.likes_count])
 
   const isOwner = currentUserId === post.user_id
   const profile = post.profile

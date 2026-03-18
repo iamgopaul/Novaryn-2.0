@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,7 +29,9 @@ export function Conversation() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+  const messageIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!userId) return
@@ -47,13 +49,42 @@ export function Conversation() {
         .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true })
-      setMessages((messagesData as PrivateMessage[]) || [])
+      const list = (messagesData as PrivateMessage[]) || []
+      setMessages(list)
+      messageIdsRef.current = new Set(list.map((m) => m.id))
 
       await supabase.from('private_messages').update({ is_read: true }).eq('receiver_id', user.id).eq('sender_id', userId)
       setLoading(false)
     }
     load()
   }, [userId])
+
+  // Real-time: new messages in this thread
+  useEffect(() => {
+    if (!userId || !currentUserId) return
+    const channel = supabase
+      .channel(`conversation-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'private_messages' },
+        async (payload) => {
+          const row = payload.new as PrivateMessage
+          const isInThread =
+            (row.sender_id === currentUserId && row.receiver_id === userId) ||
+            (row.sender_id === userId && row.receiver_id === currentUserId)
+          if (!isInThread || messageIdsRef.current.has(row.id)) return
+          messageIdsRef.current.add(row.id)
+          setMessages((prev) => [...prev, row])
+          if (row.receiver_id === currentUserId) {
+            await supabase.from('private_messages').update({ is_read: true }).eq('id', row.id)
+          }
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, currentUserId])
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>
   if (notFound || !partner || !currentUserId) return <div className="space-y-4"><h1 className="text-2xl font-bold">Conversation not found</h1><Link to="/messages" className="text-primary hover:underline">Back to messages</Link></div>
@@ -77,7 +108,16 @@ export function Conversation() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col p-0">
-          <MessageThread messages={messages} currentUserId={currentUserId} partnerId={userId!} />
+          <MessageThread
+          messages={messages}
+          currentUserId={currentUserId}
+          partnerId={userId!}
+          onMessageSent={(msg) => {
+            if (messageIdsRef.current.has(msg.id)) return
+            messageIdsRef.current.add(msg.id)
+            setMessages((prev) => [...prev, msg])
+          }}
+        />
         </CardContent>
       </Card>
     </div>
