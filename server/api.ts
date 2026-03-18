@@ -141,6 +141,75 @@ const server = Bun.serve({
       }
     }
 
+    if (url.pathname === '/api/chat/workspace' && req.method === 'POST') {
+      const groqKey = process.env.GROQ_API_KEY
+      if (!groqKey) {
+        return Response.json(
+          { error: 'GROQ_API_KEY is not set. Add it to .env for Nova chat.' },
+          { status: 500 }
+        )
+      }
+      try {
+        const body = (await req.json()) as {
+          messages?: UIMessage[]
+          workspaceContext?: {
+            files?: Record<string, string>
+            terminalLines?: string[]
+            activePath?: string | null
+          }
+        }
+        const messages = body?.messages ?? []
+        const ctx = body?.workspaceContext ?? {}
+        const files = ctx.files ?? {}
+        const terminalLines = ctx.terminalLines ?? []
+        const activePath = ctx.activePath ?? null
+        if (!Array.isArray(messages) || messages.length === 0) {
+          return Response.json({ error: 'messages array is required' }, { status: 400 })
+        }
+        const filesSummary = Object.entries(files)
+          .map(([path, content]) => `\n--- ${path} ---\n${(content as string).slice(0, 8000)}${(content as string).length > 8000 ? '\n... (truncated)' : ''}`)
+          .join('')
+        const terminalSummary = terminalLines.slice(-80).join('')
+        const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have permission to:
+1. READ the user's open files and terminal output.
+2. WRITE or replace content in any file in the workspace.
+3. RUN commands in the user's terminal.
+
+Current workspace state:
+- Active file: ${activePath ?? '(none)'}
+- All files and their contents:${filesSummary || ' (no files)'}
+- Recent terminal output:\n${terminalSummary || ' (empty)'}
+
+When you want to WRITE to a file, output exactly on a single line:
+WRITE_FILE path="path/to/file.ext"
+Then on the next line start a fenced code block with triple backticks (optionally with a language). Put the full new file content inside the block. Example:
+WRITE_FILE path="main.js"
+\`\`\`javascript
+console.log('hello');
+\`\`\`
+
+When you want to RUN a command in the user's terminal, output exactly on a line:
+RUN_CMD your command here
+Example: RUN_CMD ls -la
+
+These lines will be executed automatically. You may include both a WRITE_FILE and RUN_CMD in one response. Also reply in natural language so the user understands what you did. Be concise and helpful.`
+
+        const modelMessages = await convertToModelMessages(messages)
+        const result = streamText({
+          model: groq('llama-3.3-70b-versatile'),
+          system,
+          messages: modelMessages,
+        })
+        return result.toUIMessageStreamResponse()
+      } catch (e) {
+        console.error('Workspace chat error:', e)
+        return Response.json(
+          { error: e instanceof Error ? e.message : 'Workspace chat failed' },
+          { status: 500 }
+        )
+      }
+    }
+
     return new Response('Not Found', { status: 404 })
   },
 })
