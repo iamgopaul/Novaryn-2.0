@@ -81,14 +81,16 @@ export function WorkspaceChatPanel({
   const lastParsedIdRef = useRef<string | null>(null)
 
   const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat/workspace' }),
-    body: {
-      workspaceContext: {
-        files: workspaceContext.files,
-        terminalLines: workspaceContext.terminalLines.map((l) => l.content),
-        activePath: workspaceContext.activePath,
+    transport: new DefaultChatTransport({
+      api: '/api/chat/workspace',
+      body: {
+        workspaceContext: {
+          files: workspaceContext.files,
+          terminalLines: workspaceContext.terminalLines.map((l) => l.content),
+          activePath: workspaceContext.activePath,
+        },
       },
-    },
+    }),
   })
 
   useEffect(() => {

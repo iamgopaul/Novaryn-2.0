@@ -37,8 +37,12 @@ function getLanguageFromPath(path: string): string {
   return EXT_TO_LANGUAGE[getExtension(path)] ?? 'plaintext'
 }
 
-function pathToTree(files: Record<string, string>): { name: string; path?: string; children?: { name: string; path?: string; children?: unknown[] }[] } {
-  const root: { name: string; children: Map<string, { name: string; path?: string; children?: Map<string, unknown> }> } = { name: 'WORKSPACE', children: new Map() }
+type FileTreeNode = { name: string; path?: string; children?: FileTreeNode[] }
+
+type InternalNode = { name: string; path?: string; children?: Map<string, InternalNode> }
+
+function pathToTree(files: Record<string, string>): { name: string; children?: FileTreeNode[] } {
+  const root: { name: string; children: Map<string, InternalNode> } = { name: 'WORKSPACE', children: new Map() }
   for (const path of Object.keys(files).sort()) {
     const parts = path.split('/')
     let current = root.children
@@ -49,16 +53,16 @@ function pathToTree(files: Record<string, string>): { name: string; path?: strin
         current.set(path, { name: part, path })
       } else {
         if (!current.has(part)) current.set(part, { name: part, children: new Map() })
-        const next = (current.get(part) as { children: Map<string, unknown> }).children
-        current = next as Map<string, { name: string; path?: string; children?: Map<string, unknown> }>
+        const next = (current.get(part) as InternalNode).children
+        if (next) current = next
       }
     }
   }
-  function mapToArr(m: Map<string, { name: string; path?: string; children?: Map<string, unknown> }>): { name: string; path?: string; children?: unknown[] }[] {
-    return Array.from(m.entries()).map(([k, v]) => ({
+  function mapToArr(m: Map<string, InternalNode>): FileTreeNode[] {
+    return Array.from(m.entries()).map(([_, v]) => ({
       name: v.name,
       path: v.path,
-      children: v.children ? mapToArr(v.children as Map<string, { name: string; path?: string; children?: Map<string, unknown> }>) : undefined,
+      children: v.children ? mapToArr(v.children) : undefined,
     }))
   }
   return { name: root.name, children: mapToArr(root.children) }
@@ -266,6 +270,7 @@ export function WorkspacePage() {
   const [editorHeightPercent, setEditorHeightPercent] = useState(60)
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const monacoRef = useRef<Parameters<NonNullable<React.ComponentProps<typeof Editor>['onMount']>>[0] | null>(null)
 
   const shellConfig = shells.find((s) => s.value === shell) || shells[0]
   const prompt = shellConfig.prompt
@@ -411,6 +416,7 @@ export function WorkspacePage() {
       }
       if (runLanguage === 'typescript') {
         try {
+          // @ts-expect-error - ESM URL resolved at runtime
           const ts = await import('https://esm.sh/typescript@5.6.3')
           const out = ts.transpileModule(runCode, {
             compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
@@ -850,13 +856,7 @@ export function WorkspacePage() {
   )
 }
 
-function TreeNode({
-  node,
-  openFile,
-}: {
-  node: { name: string; path?: string; children?: { name: string; path?: string; children?: unknown[] }[] }
-  openFile: (path: string) => void
-}) {
+function TreeNode({ node, openFile }: { node: FileTreeNode; openFile: (path: string) => void }) {
   const [open, setOpen] = useState(true)
   const hasChildren = node.children && node.children.length > 0
   const isFile = !!node.path
