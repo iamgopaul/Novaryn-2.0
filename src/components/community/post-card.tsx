@@ -43,6 +43,8 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
   const [comments, setComments] = useState<CommentRow[]>([])
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
+  const [isRepostComposerOpen, setIsRepostComposerOpen] = useState(false)
+  const [repostText, setRepostText] = useState('')
   const supabase = createClient()
 
   useEffect(() => {
@@ -114,10 +116,14 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
 
   const handleRepost = async () => {
     if (loading || !currentUserId) return
+    if (!isRepostComposerOpen) {
+      setIsRepostComposerOpen(true)
+      setRepostText('')
+      return
+    }
     setLoading(true)
     const targetId = post.repost_of || post.id
-    const message = window.prompt('Add a message to your repost (optional):') ?? ''
-    const content = message.trim()
+    const content = repostText.trim()
     const { error } = await supabase.from('posts').insert({
       user_id: currentUserId,
       content,
@@ -263,6 +269,40 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             {post.reposts_count}
           </Button>
         </div>
+
+        {isRepostComposerOpen && currentUserId && (
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Add a message to your repost</p>
+            <Textarea
+              placeholder="Write something about this post..."
+              value={repostText}
+              onChange={(e) => setRepostText(e.target.value)}
+              rows={3}
+              className="resize-none"
+              disabled={loading}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsRepostComposerOpen(false)
+                  setRepostText('')
+                }}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleRepost}
+                disabled={loading}
+              >
+                Repost
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="border-t pt-4 space-y-3">
           <p className="text-sm font-medium text-muted-foreground">Comments</p>
