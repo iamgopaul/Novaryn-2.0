@@ -51,7 +51,13 @@ You can restructure the workspace, refactor code across multiple files, build/sc
 - Files:${filesSummary || ' (none)'}
 - Terminal:\n${terminalSummary || ' (empty)'}
 
-WRITE_FILE path="path/to/file.ext" then a fenced code block with content. DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD in one response are allowed. All executed automatically. Reply in natural language. Be concise and helpful.`
+To write or create a file you MUST output this exact line first, then a fenced code block with the FULL file content on the next line:
+WRITE_FILE path="path/to/file.ext"
+\`\`\`language
+<entire file content here - no placeholder, no "..." - the real code>
+\`\`\`
+Example: WRITE_FILE path="main.ts" then on the next line \`\`\`typescript and then the complete file contents. The user will only see your changes in the editor if you use this format; otherwise the file will not be updated.
+DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD allowed. Reply in natural language. Be concise.`
 
     const modelMessages = await convertToModelMessages(messages)
     const result = streamText({
