@@ -123,16 +123,16 @@ export function NovaChatPanel({
         .eq('conversation_id', convId)
         .order('created_at', { ascending: true })
 
-      if (chatMessages?.length) {
-        const uiMessages = chatMessages.map((msg, idx) => ({
+      const uiMessages =
+        chatMessages?.map((msg, idx) => ({
           id: msg.id || String(idx),
           role: msg.role,
           parts: [{ type: 'text' as const, text: msg.content }],
-        }))
-        setMessages(uiMessages)
-        setConversationId(convId)
-        onSelectConversation?.(convId)
-      }
+        })) ?? []
+
+      setMessages(uiMessages)
+      setConversationId(convId)
+      onSelectConversation?.(convId)
     } catch (e) {
       logger.error('Load conversation failed', 'NovaChatPanel', e)
     }
