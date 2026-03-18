@@ -12,13 +12,15 @@ interface Conversation {
 }
 
 function buildConversations(
-  messages: Array<{ receiver_id: string; sender_id: string; sender: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; receiver: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; content: string; created_at: string; is_read: boolean }>,
+  messages: Array<{ receiver_id: string; sender_id: string; content: string; created_at: string; is_read: boolean }>,
+  profilesById: Map<string, Conversation['partner']>,
   currentUserId: string
 ): Conversation[] {
   const map = new Map<string, Conversation>()
   messages.forEach((msg) => {
     const isReceiver = msg.receiver_id === currentUserId
-    const partner = isReceiver ? msg.sender : msg.receiver
+    const partnerId = isReceiver ? msg.sender_id : msg.receiver_id
+    const partner = profilesById.get(partnerId)
     if (!partner) return
     if (!map.has(partner.id)) {
       map.set(partner.id, {
@@ -47,11 +49,25 @@ export function MessagesList() {
 
     const { data: messages } = await supabase
       .from('private_messages')
-      .select('*, sender:profiles!private_messages_sender_id_fkey(id, username, display_name, avatar_url), receiver:profiles!private_messages_receiver_id_fkey(id, username, display_name, avatar_url)')
+      .select('*')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
       .order('created_at', { ascending: false })
 
-    setConversations(buildConversations(messages || [], user.id))
+    const partnerIds = Array.from(
+      new Set(
+        (messages || []).map((m: { sender_id: string; receiver_id: string }) =>
+          m.sender_id === user.id ? m.receiver_id : m.sender_id
+        )
+      )
+    ).filter(Boolean)
+    const { data: profiles } = partnerIds.length
+      ? await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', partnerIds)
+      : { data: [] as Conversation['partner'][] }
+    const profileMap = new Map((profiles as Conversation['partner'][] | null | undefined)?.map((p) => [p.id, p]) ?? [])
+    setConversations(buildConversations((messages as any[]) || [], profileMap, user.id))
   }
 
   const loadRef = useRef(loadConversations)

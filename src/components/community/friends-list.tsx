@@ -27,17 +27,22 @@ export function FriendsList({ userId }: FriendsListProps) {
     const load = async () => {
       const { data: friendships } = await supabase
         .from('friendships')
-        .select(`
-          *,
-          friend:profiles!friendships_friend_id_fkey (
-            id, username, display_name, avatar_url
-          )
-        `)
+        .select('*')
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
         .eq('status', 'accepted')
         .limit(5)
-      const list = friendships?.map((f: { friend: FriendProfile }) => f.friend).filter(Boolean) || []
-      setFriends(list)
+      const ids =
+        friendships?.map((f: { user_id: string; friend_id: string }) =>
+          f.user_id === userId ? f.friend_id : f.user_id
+        ) ?? []
+      const uniqueIds = Array.from(new Set(ids)).filter(Boolean)
+      const { data: profiles } = uniqueIds.length
+        ? await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', uniqueIds)
+        : { data: [] as FriendProfile[] }
+      setFriends((profiles as FriendProfile[] | null) ?? [])
 
       const { count } = await supabase
         .from('friendships')

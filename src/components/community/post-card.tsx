@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 
 interface PostCardProps {
-  post: Post & { profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null } }
+  post: Omit<Post, 'profile'> & { profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null } }
   currentUserId?: string
 }
 

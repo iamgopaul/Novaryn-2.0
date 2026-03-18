@@ -8,7 +8,8 @@ import { FriendsList } from '@/components/community/friends-list'
 import { MessageCircle, TrendingUp, Users } from 'lucide-react'
 import { Post } from '@/lib/types'
 
-type PostWithMeta = Post & { profile?: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }; is_liked?: boolean }
+type BasicProfile = { id: string; username: string | null; display_name: string | null; avatar_url: string | null }
+type PostWithMeta = Omit<Post, 'profile'> & { profile?: BasicProfile; is_liked?: boolean }
 
 export function Community() {
   const [posts, setPosts] = useState<PostWithMeta[]>([])
@@ -25,10 +26,23 @@ export function Community() {
 
       const { data: postsData } = await supabase
         .from('posts')
-        .select('*, profiles(id, username, display_name, avatar_url)')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(20)
-      const postsWithProfile: PostWithMeta[] = (postsData || []).map((p: { profiles?: PostWithMeta['profile'] }) => ({ ...p, profile: p.profiles, is_liked: false })) as PostWithMeta[]
+      const rawPosts = (postsData || []) as PostWithMeta[]
+      const userIds = Array.from(new Set(rawPosts.map((p) => p.user_id).filter(Boolean)))
+      const { data: profilesData } = userIds.length
+        ? await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', userIds)
+        : { data: [] as BasicProfile[] }
+      const profileMap = new Map((profilesData as BasicProfile[] | null | undefined)?.map((pr) => [pr.id, pr]) ?? [])
+      const postsWithProfile: PostWithMeta[] = rawPosts.map((p) => ({
+        ...p,
+        profile: profileMap.get(p.user_id),
+        is_liked: false,
+      }))
 
       if (user) {
         const { data: likes } = await supabase.from('post_likes').select('post_id').eq('user_id', user.id)
@@ -57,11 +71,16 @@ export function Community() {
             const newRow = payload.new as { id: string; user_id: string; content: string; created_at: string; likes_count: number; comments_count: number; reposts_count: number; media_urls?: string[]; is_repost?: boolean; original_post_id?: string }
             const { data } = await supabase
               .from('posts')
-              .select('*, profiles(id, username, display_name, avatar_url)')
+              .select('*')
               .eq('id', newRow.id)
               .single()
             if (data) {
-              const withProfile = { ...data, profile: (data as { profiles?: PostWithMeta['profile'] }).profiles, is_liked: false }
+              const { data: pr } = await supabase
+                .from('profiles')
+                .select('id, username, display_name, avatar_url')
+                .eq('id', (data as { user_id: string }).user_id)
+                .maybeSingle()
+              const withProfile = { ...data, profile: (pr as BasicProfile | null) ?? undefined, is_liked: false }
               setPosts((prev) => [withProfile as PostWithMeta, ...prev])
             }
             setTotalPosts((n) => n + 1)

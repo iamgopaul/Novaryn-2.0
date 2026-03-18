@@ -17,11 +17,11 @@ export function SuggestedUsers({ currentUserId }: SuggestedUsersProps) {
 
   useEffect(() => {
     const fetchUsers = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', currentUserId || '')
-        .limit(5)
+      let q = supabase.from('profiles').select('*')
+      if (currentUserId) {
+        q = q.neq('id', currentUserId)
+      }
+      const { data } = await q.limit(5)
       if (data) setUsers(data)
     }
     fetchUsers()
