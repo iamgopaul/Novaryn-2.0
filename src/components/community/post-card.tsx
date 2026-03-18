@@ -37,8 +37,8 @@ interface PostCardProps {
 
 export function PostCard({ post, currentUserId }: PostCardProps) {
   const navigate = useNavigate()
-  const [isLiked, setIsLiked] = useState(post.is_liked || false)
-  const [likesCount, setLikesCount] = useState(post.likes_count)
+  const [isLiked, setIsLiked] = useState(!!post.is_liked)
+  const [likesCount, setLikesCount] = useState(Number(post.likes_count) || 0)
   const [loading, setLoading] = useState(false)
   const [comments, setComments] = useState<CommentRow[]>([])
   const [commentText, setCommentText] = useState('')
