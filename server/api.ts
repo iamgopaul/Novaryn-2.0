@@ -170,29 +170,32 @@ const server = Bun.serve({
           .map(([path, content]) => `\n--- ${path} ---\n${(content as string).slice(0, 8000)}${(content as string).length > 8000 ? '\n... (truncated)' : ''}`)
           .join('')
         const terminalSummary = terminalLines.slice(-80).join('')
-        const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have permission to:
-1. READ the user's open files and terminal output.
-2. WRITE or replace content in any file in the workspace.
-3. RUN commands in the user's terminal.
+        const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have full control to:
+
+1. READ – all open files and terminal output.
+2. WRITE – create or replace any file (use path with slashes for folders, e.g. src/utils.js).
+3. DELETE – remove files from the workspace.
+4. RUN – execute commands in the user's terminal.
+
+You can: restructure the workspace (create folders, move/rename by writing to new path and deleting old), refactor code across multiple files (use multiple WRITE_FILE blocks), build or scaffold workspaces (create many files at once), and create or delete files as needed.
 
 Current workspace state:
 - Active file: ${activePath ?? '(none)'}
 - All files and their contents:${filesSummary || ' (no files)'}
 - Recent terminal output:\n${terminalSummary || ' (empty)'}
 
-When you want to WRITE to a file, output exactly on a single line:
+To WRITE or create a file, output exactly on a single line:
 WRITE_FILE path="path/to/file.ext"
-Then on the next line start a fenced code block with triple backticks (optionally with a language). Put the full new file content inside the block. Example:
-WRITE_FILE path="main.js"
-\`\`\`javascript
-console.log('hello');
-\`\`\`
+Then on the next line start a fenced code block with triple backticks. Put the full file content inside. You can output multiple WRITE_FILE blocks to refactor or scaffold.
 
-When you want to RUN a command in the user's terminal, output exactly on a line:
+To DELETE a file, output exactly on a line:
+DELETE_FILE path="path/to/file.ext"
+Use for cleanup, or to move (write new path then delete old).
+
+To RUN a command in the terminal, output exactly on a line:
 RUN_CMD your command here
-Example: RUN_CMD ls -la
 
-These lines will be executed automatically. You may include both a WRITE_FILE and RUN_CMD in one response. Also reply in natural language so the user understands what you did. Be concise and helpful.`
+All WRITE_FILE, DELETE_FILE, and RUN_CMD are executed automatically. Also reply in natural language. Be concise and helpful.`
 
         const modelMessages = await convertToModelMessages(messages)
         const result = streamText({

@@ -28,24 +28,27 @@ export interface WorkspaceContext {
 export interface WorkspaceChatPanelProps {
   workspaceContext: WorkspaceContext
   onWriteFile: (path: string, content: string) => void
+  onDeleteFile?: (path: string) => void
   onRunCommand: (command: string) => void
   onOpenFile?: (path: string) => void
   onCollapse?: () => void
   className?: string
 }
 
-/** Parse assistant text for WRITE_FILE and RUN_CMD; return actions and cleaned text for display */
+/** Parse assistant text for WRITE_FILE, DELETE_FILE, and RUN_CMD; return actions and cleaned text for display */
 function parseWorkspaceActions(text: string): {
   writeFiles: { path: string; content: string }[]
+  deleteFiles: string[]
   runCommands: string[]
   displayText: string
 } {
   const writeFiles: { path: string; content: string }[] = []
+  const deleteFiles: string[] = []
   const runCommands: string[] = []
   let displayText = text
 
   // WRITE_FILE path="..." then optional newlines then ```...``` block
-  const writeFileBlockRegex = /WRITE_FILE\s+path=(?:"([^"]*)"|'([^']*)')\s*\n([\s\S]*?)(?=\n(?:RUN_CMD|WRITE_FILE)|\n\n|$)/g
+  const writeFileBlockRegex = /WRITE_FILE\s+path=(?:"([^"]*)"|'([^']*)')\s*\n([\s\S]*?)(?=\n(?:RUN_CMD|WRITE_FILE|DELETE_FILE)|\n\n|$)/g
   let m: RegExpExecArray | null
   while ((m = writeFileBlockRegex.exec(text)) !== null) {
     const path = (m[1] ?? m[2] ?? '').trim()
@@ -58,7 +61,17 @@ function parseWorkspaceActions(text: string): {
     }
   }
 
-  const runCmdRegex = /RUN_CMD\s+(.+?)(?=\n(?:RUN_CMD|WRITE_FILE)|\n\n|$)/gs
+  // DELETE_FILE path="..."
+  const deleteFileRegex = /DELETE_FILE\s+path=(?:"([^"]*)"|'([^']*)')\s*(?=\n|$)/g
+  while ((m = deleteFileRegex.exec(text)) !== null) {
+    const path = (m[1] ?? m[2] ?? '').trim()
+    if (path) {
+      deleteFiles.push(path)
+      displayText = displayText.replace(m[0], `*[Deleted \`${path}\`]*\n\n`)
+    }
+  }
+
+  const runCmdRegex = /RUN_CMD\s+(.+?)(?=\n(?:RUN_CMD|WRITE_FILE|DELETE_FILE)|\n\n|$)/gs
   while ((m = runCmdRegex.exec(text)) !== null) {
     const cmd = m[1].trim().replace(/\n.*/s, '').trim()
     if (cmd) {
@@ -67,12 +80,13 @@ function parseWorkspaceActions(text: string): {
     }
   }
 
-  return { writeFiles, runCommands, displayText }
+  return { writeFiles, deleteFiles, runCommands, displayText }
 }
 
 export function WorkspaceChatPanel({
   workspaceContext,
   onWriteFile,
+  onDeleteFile,
   onRunCommand,
   onOpenFile,
   onCollapse,
@@ -103,7 +117,7 @@ export function WorkspaceChatPanel({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages])
 
-  // Parse last assistant message for WRITE_FILE / RUN_CMD when stream finishes
+  // Parse last assistant message for WRITE_FILE / DELETE_FILE / RUN_CMD when stream finishes
   useEffect(() => {
     if (status === 'streaming' || status === 'submitted') return
     const last = messages[messages.length - 1]
@@ -112,13 +126,14 @@ export function WorkspaceChatPanel({
     lastParsedIdRef.current = last.id
     const text = getMessageText(last as UIMessage)
     if (!text) return
-    const { writeFiles, runCommands } = parseWorkspaceActions(text)
+    const { writeFiles, deleteFiles, runCommands } = parseWorkspaceActions(text)
+    deleteFiles.forEach((path) => onDeleteFile?.(path))
     writeFiles.forEach(({ path, content }) => {
       onWriteFile(path, content)
       onOpenFile?.(path)
     })
     runCommands.forEach((cmd) => onRunCommand(cmd))
-  }, [messages, status, onWriteFile, onRunCommand, onOpenFile])
+  }, [messages, status, onWriteFile, onDeleteFile, onRunCommand, onOpenFile])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

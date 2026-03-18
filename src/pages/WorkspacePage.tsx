@@ -112,6 +112,8 @@ const PISTON_LANG: Record<string, { piston: string; filename: string }> = {
   typescript: { piston: 'typescript', filename: 'main.ts' },
 }
 
+const PISTON_API_URL = 'https://emkc.org/api/v2/piston/execute'
+
 async function runViaPiston(
   langKey: string,
   code: string,
@@ -123,8 +125,10 @@ async function runViaPiston(
     onError(`No runner for ${langKey}. Use Download to run locally.`)
     return
   }
+  const langLabel = mapped.piston === 'c++' ? 'C++' : mapped.piston.charAt(0).toUpperCase() + mapped.piston.slice(1)
+  onOutput(`Running ${langLabel}...\n`)
   try {
-    const res = await fetch('https://emkc.org/api/v2/piston/execute', {
+    const res = await fetch(PISTON_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -133,19 +137,29 @@ async function runViaPiston(
         files: [{ name: mapped.filename, content: code }],
       }),
     })
+    const text = await res.text()
     if (!res.ok) {
-      onError(`API error: ${res.status}. Try again or use Download.`)
+      onError(`API error: ${res.status}. ${text || 'Try again or use Download.'}`)
       return
     }
-    const data = await res.json()
+    let data: { run?: { stdout?: string; stderr?: string; output?: string }; compile?: { stdout?: string; stderr?: string; output?: string }; message?: string }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      onError(`Invalid API response. Use Download to run locally.`)
+      return
+    }
     const run = data.run
     const compile = data.compile
-    if (compile?.stderr) onError(`Compile: ${compile.stderr}`)
-    if (run?.stderr) onError(run.stderr)
-    if (run?.stdout) onOutput(run.stdout)
-    else if (!compile?.stderr && !run?.stderr) onOutput('(no output)')
+    if (data.message) onError(data.message)
+    if (compile?.stderr?.trim()) onError(`Compile stderr:\n${compile.stderr}`)
+    if (compile?.stdout?.trim()) onOutput(`Compile stdout:\n${compile.stdout}`)
+    if (run?.stderr?.trim()) onError(run.stderr)
+    const out = (run?.stdout ?? run?.output ?? '').trim()
+    if (out) onOutput(out)
+    else if (!run?.stderr?.trim() && !compile?.stderr?.trim() && !data.message) onOutput('(Program ran with no output)')
   } catch (e) {
-    onError(`Network error: ${e instanceof Error ? e.message : 'Unknown'}. Use Download to run locally.`)
+    onError(`Network error: ${e instanceof Error ? e.message : 'Unknown'}. Check connection or use Download to run locally.`)
   }
 }
 
@@ -447,6 +461,8 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
     const code = entryPath ? (workspaceFiles[entryPath] ?? '') : runCode
     const lang = entryPath ? getLanguageFromPath(entryPath) : runLanguage
     setRunLoading(true)
+    setActivePanel('terminal')
+    setPanelOpen(true)
     try {
       if (lang === 'javascript') {
         const logs: string[] = []
@@ -489,8 +505,9 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       }
       if (lang === 'python') {
         try {
+          appendTerminal('output', 'Running Python...\n')
           if (!pyodideRef.current) {
-            appendTerminal('output', 'Loading Python runtime (Pyodide)...')
+            appendTerminal('output', 'Loading Python runtime (Pyodide)...\n')
             const loadPyodide = (window as unknown as { loadPyodide?: (opts: { indexURL: string }) => Promise<{ runPythonAsync: (c: string) => Promise<void>; loadPackage: (n: string) => Promise<void> }> }).loadPyodide
             if (!loadPyodide) {
               const script = document.createElement('script')
@@ -971,6 +988,7 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
                   setWorkspaceFiles((prev) => ({ ...prev, [path]: content }))
                   openFile(path)
                 }}
+                onDeleteFile={deleteFile}
                 onRunCommand={(command) => executeCommand(command)}
                 onOpenFile={openFile}
                 onCollapse={() => setChatPanelOpen(false)}
@@ -1006,8 +1024,6 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
   )
 }
 
-const FILE_EXTENSIONS = ['js', 'ts', 'py', 'html', 'css', 'json', 'md', 'cpp', 'java', 'rs', 'go', 'cs'] as const
-
 function TreeNode({
   node,
   openFile,
@@ -1020,12 +1036,47 @@ function TreeNode({
   onRenameFile: (oldPath: string, newPath: string) => void
 }) {
   const [open, setOpen] = useState(true)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
   const hasChildren = node.children && node.children.length > 0
   const isFile = !!node.path
 
   if (isFile) {
     const path = node.path!
-    const base = path.replace(/\.[^.]+$/, '') || path
+    const startRename = () => {
+      setRenameValue(path)
+      setIsRenaming(true)
+    }
+    const submitRename = () => {
+      const next = renameValue.trim()
+      if (next && next !== path) onRenameFile(path, next)
+      setIsRenaming(false)
+    }
+    const cancelRename = () => {
+      setRenameValue(path)
+      setIsRenaming(false)
+    }
+
+    if (isRenaming) {
+      return (
+        <div className="flex w-full items-center gap-1 px-2 py-1">
+          <input
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitRename()
+              if (e.key === 'Escape') cancelRename()
+            }}
+            onBlur={submitRename}
+            className="min-w-0 flex-1 rounded border border-input bg-background px-2 py-0.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            autoFocus
+            data-testid="rename-input"
+          />
+        </div>
+      )
+    }
+
     return (
       <div className="group flex w-full items-center gap-0.5 rounded px-2 py-1 text-left text-sm hover:bg-muted/60">
         <button type="button" onClick={() => openFile(path)} className="flex min-w-0 flex-1 items-center gap-2 truncate">
@@ -1039,11 +1090,7 @@ function TreeNode({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {FILE_EXTENSIONS.filter((ext) => `${base}.${ext}` !== path).map((ext) => (
-              <DropdownMenuItem key={ext} onClick={() => onRenameFile(path, `${base}.${ext}`)}>
-                Save as .{ext}
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuItem onClick={startRename}>Rename (edit name and type)</DropdownMenuItem>
             <DropdownMenuItem onClick={() => onDeleteFile(path)} className="text-destructive">
               Delete file
             </DropdownMenuItem>

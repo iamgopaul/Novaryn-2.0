@@ -40,24 +40,18 @@ export async function POST(req: Request) {
       .map(([path, content]) => `\n--- ${path} ---\n${String(content).slice(0, 8000)}${String(content).length > 8000 ? '\n... (truncated)' : ''}`)
       .join('')
     const terminalSummary = terminalLines.slice(-80).join('')
-    const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have permission to:
-1. READ the user's open files and terminal output.
-2. WRITE or replace content in any file in the workspace.
-3. RUN commands in the user's terminal.
+    const system = `You are Nova, the AI assistant integrated into the Novaryn Workspace. You have full control to:
+1. READ – all open files and terminal output.
+2. WRITE – create or replace any file (paths with slashes create folders, e.g. src/utils.js).
+3. DELETE – remove files from the workspace.
+4. RUN – execute commands in the user's terminal.
 
-Current workspace state:
+You can restructure the workspace, refactor code across multiple files, build/scaffold workspaces, and create or delete files. Current state:
 - Active file: ${activePath ?? '(none)'}
-- All files and their contents:${filesSummary || ' (no files)'}
-- Recent terminal output:\n${terminalSummary || ' (empty)'}
+- Files:${filesSummary || ' (none)'}
+- Terminal:\n${terminalSummary || ' (empty)'}
 
-When you want to WRITE to a file, output exactly on a single line:
-WRITE_FILE path="path/to/file.ext"
-Then on the next line start a fenced code block with triple backticks (optionally with a language). Put the full new file content inside the block.
-
-When you want to RUN a command in the user's terminal, output exactly on a line:
-RUN_CMD your command here
-
-These lines will be executed automatically. Also reply in natural language so the user understands what you did. Be concise and helpful.`
+WRITE_FILE path="path/to/file.ext" then a fenced code block with content. DELETE_FILE path="path/to/file.ext". RUN_CMD your command. Multiple WRITE_FILE/DELETE_FILE/RUN_CMD in one response are allowed. All executed automatically. Reply in natural language. Be concise and helpful.`
 
     const modelMessages = await convertToModelMessages(messages)
     const result = streamText({
