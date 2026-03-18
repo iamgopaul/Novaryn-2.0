@@ -120,7 +120,7 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     setIsRepostComposerOpen(true)
     // If this is already a repost with text, start from that text so
     // reposting a repost “posts what you posted”.
-    setRepostText(post.content || '')
+    setRepostText(currentUserId === post.user_id ? (post.content || '') : '')
   }
 
   const submitRepost = async () => {
@@ -293,9 +293,9 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
 
         {isRepostComposerOpen && currentUserId && (
           <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
-            <p className="text-sm font-medium text-muted-foreground">Add a message to your repost</p>
+            <p className="text-sm font-medium text-muted-foreground">Your message (shown above the original post)</p>
             <Textarea
-              placeholder="Write something about this post..."
+              placeholder="Add your own text above the post..."
               value={repostText}
               onChange={(e) => setRepostText(e.target.value)}
               rows={3}
