@@ -155,20 +155,23 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
         console.error('Error unliking post', error)
       } else {
         setIsLiked(false)
-        setLikesCount(prev => Math.max(0, prev - 1))
       }
     } else {
       const { error } = await supabase.from('post_likes').insert({
         post_id: post.id,
         user_id: currentUserId,
       })
-      if (error) {
+      // 23505 = unique_violation (already liked) — don't treat as error so UI doesn't break
+      if (error && (error as { code?: string }).code !== '23505') {
         console.error('Error liking post', error)
       } else {
         setIsLiked(true)
-        setLikesCount(prev => prev + 1)
       }
     }
+
+    // Refetch likes_count from DB so display always matches (trigger updates posts.likes_count)
+    const { data } = await supabase.from('posts').select('likes_count').eq('id', post.id).single()
+    if (data?.likes_count != null) setLikesCount(data.likes_count)
 
     setLoading(false)
   }
