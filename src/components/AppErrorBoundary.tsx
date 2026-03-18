@@ -3,7 +3,6 @@ import { logger } from '@/lib/logger'
 import { reportError } from '@/lib/error-handling'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
-import { Link } from 'react-router-dom'
 
 interface Props {
   children: ReactNode
@@ -37,7 +36,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Button asChild>
-              <Link to="/">Go home</Link>
+              <a href="/">Go home</a>
             </Button>
             <Button
               variant="outline"
