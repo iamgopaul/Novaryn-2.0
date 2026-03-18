@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { DashboardSidebar } from '@/components/dashboard/sidebar'
@@ -10,6 +10,7 @@ import { Profile } from '@/lib/types'
 
 export function DashboardLayout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -47,7 +48,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </SidebarInset>
-      <NovaChatBubble userId={user.id} />
+      {location.pathname !== '/chatbot' && <NovaChatBubble userId={user.id} />}
     </SidebarProvider>
   )
 }

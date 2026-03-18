@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { User } from '@supabase/supabase-js'
@@ -10,7 +10,7 @@ export function ChatbotPage() {
   const [user, setUser] = useState<User | null>(null)
   const [conversations, setConversations] = useState<ChatConversation[]>([])
   const [searchParams] = useSearchParams()
-  const selectedConversationId = searchParams.get('conversation')
+  const selectedFromUrl = searchParams.get('conversation')
   const supabase = createClient()
 
   useEffect(() => {
@@ -36,6 +36,11 @@ export function ChatbotPage() {
     )
   }
 
+  const effectiveSelectedId = useMemo(
+    () => selectedFromUrl ?? conversations[0]?.id ?? null,
+    [selectedFromUrl, conversations]
+  )
+
   return (
     <div className="flex h-[calc(100vh-10rem)] gap-4">
       <ConversationSidebar
@@ -47,7 +52,7 @@ export function ChatbotPage() {
         <NovaChatPanel
           userId={user.id}
           variant="page"
-          selectedConversationId={selectedConversationId}
+          selectedConversationId={effectiveSelectedId}
           onConversationCreated={(conv) => setConversations((prev) => [conv, ...prev])}
           className="h-full"
         />

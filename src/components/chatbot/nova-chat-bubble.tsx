@@ -38,6 +38,7 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
     (e: React.PointerEvent) => {
       if ((e.target as HTMLElement).closest('button')) return
       e.preventDefault()
+
       dragRef.current = {
         clientX: e.clientX,
         clientY: e.clientY,
@@ -45,36 +46,36 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
         bottom: position.bottom,
       }
       clickSuppressRef.current = false
+
+      const onMove = (evt: PointerEvent) => {
+        if (!dragRef.current) return
+        clickSuppressRef.current = true
+        const newRight = dragRef.current.right + (dragRef.current.clientX - evt.clientX)
+        const newBottom = dragRef.current.bottom + (dragRef.current.clientY - evt.clientY)
+        setPosition(clampPosition(newRight, newBottom))
+      }
+
+      const onUp = () => {
+        dragRef.current = null
+        setTimeout(() => {
+          clickSuppressRef.current = false
+        }, 0)
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onUp)
+      }
+
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onUp)
+
       const el = e.target as HTMLElement
       if (typeof el.setPointerCapture === 'function') {
         el.setPointerCapture(e.pointerId)
       }
     },
-    [position]
+    [position, clampPosition]
   )
-
-  useEffect(() => {
-    if (dragRef.current == null) return
-    const { w, h } = getContainerSize()
-    const onMove = (e: PointerEvent) => {
-      if (!dragRef.current) return
-      clickSuppressRef.current = true
-      const newRight = dragRef.current.right + (dragRef.current.clientX - e.clientX)
-      const newBottom = dragRef.current.bottom + (dragRef.current.clientY - e.clientY)
-      setPosition(clampPosition(newRight, newBottom))
-    }
-    const onUp = () => {
-      dragRef.current = null
-      setTimeout(() => { clickSuppressRef.current = false }, 0)
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', onUp)
-      document.removeEventListener('pointercancel', onUp)
-    }
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', onUp)
-    document.addEventListener('pointercancel', onUp)
-    return onUp
-  }, [clampPosition])
 
   const handleBubbleClick = useCallback(() => {
     if (clickSuppressRef.current) return
