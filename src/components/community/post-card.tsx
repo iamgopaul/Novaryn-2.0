@@ -268,13 +268,14 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             variant="ghost"
             size="sm"
             onClick={handleLike}
+            disabled={!currentUserId || loading}
             className={cn(
               'gap-2',
               isLiked && 'text-red-500 hover:text-red-600'
             )}
           >
             <Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />
-            {likesCount}
+            {likesCount ?? 0}
           </Button>
           <Button
             variant="ghost"

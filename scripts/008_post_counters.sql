@@ -1,5 +1,6 @@
 -- Post counters: likes_count, comments_count, reposts_count on public.posts
 -- Run in Supabase SQL Editor. Uses SECURITY DEFINER so RLS doesn't block the trigger UPDATE.
+-- Ensures one like per user per post (UNIQUE) and cleans duplicate likes.
 
 -- Ensure columns exist
 ALTER TABLE public.posts
@@ -7,6 +8,20 @@ ALTER TABLE public.posts
   ADD COLUMN IF NOT EXISTS comments_count integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS reposts_count integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS repost_of uuid REFERENCES public.posts(id) ON DELETE SET NULL;
+
+-- ========== One like per user per post (enforce and clean) ==========
+-- 1) Remove duplicate likes so each (post_id, user_id) appears only once
+DELETE FROM public.post_likes a
+USING public.post_likes b
+WHERE a.ctid < b.ctid AND a.post_id = b.post_id AND a.user_id = b.user_id;
+
+-- 2) Enforce one like per user per post (ignore error if constraint already exists)
+DO $$
+BEGIN
+  ALTER TABLE public.post_likes ADD CONSTRAINT post_likes_post_user_unique UNIQUE (post_id, user_id);
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ========== LIKES (on post_likes) ==========
 CREATE OR REPLACE FUNCTION public.post_likes_after_insert()
