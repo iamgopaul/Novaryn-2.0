@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
-import { Bot, User, Send, Sparkles, MessageSquare } from 'lucide-react'
+import { Bot, User, Send, Sparkles, MessageSquare, PanelRightClose } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 
@@ -30,6 +30,7 @@ export interface WorkspaceChatPanelProps {
   onWriteFile: (path: string, content: string) => void
   onRunCommand: (command: string) => void
   onOpenFile?: (path: string) => void
+  onCollapse?: () => void
   className?: string
 }
 
@@ -74,23 +75,28 @@ export function WorkspaceChatPanel({
   onWriteFile,
   onRunCommand,
   onOpenFile,
+  onCollapse,
   className,
 }: WorkspaceChatPanelProps) {
   const [input, setInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastParsedIdRef = useRef<string | null>(null)
+  const contextRef = useRef(workspaceContext)
+  contextRef.current = workspaceContext
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat/workspace',
-      body: {
+      body: () => ({
         workspaceContext: {
-          files: workspaceContext.files,
-          terminalLines: workspaceContext.terminalLines.map((l) => l.content),
-          activePath: workspaceContext.activePath,
+          files: contextRef.current.files,
+          terminalLines: contextRef.current.terminalLines.map((l) => l.content),
+          activePath: contextRef.current.activePath,
         },
-      },
+      }),
     }),
+    onError: (err) => setError(err.message ?? 'Chat failed'),
   })
 
   useEffect(() => {
@@ -118,14 +124,16 @@ export function WorkspaceChatPanel({
     e.preventDefault()
     const text = input.trim()
     if (!text || status === 'streaming' || status === 'submitted') return
+    setError(null)
+    const ctx = contextRef.current
     sendMessage(
       { text },
       {
         body: {
           workspaceContext: {
-            files: workspaceContext.files,
-            terminalLines: workspaceContext.terminalLines.map((l) => l.content),
-            activePath: workspaceContext.activePath,
+            files: ctx.files,
+            terminalLines: ctx.terminalLines.map((l) => l.content),
+            activePath: ctx.activePath,
           },
         },
       }
@@ -137,9 +145,16 @@ export function WorkspaceChatPanel({
 
   return (
     <div className={cn('flex h-full flex-col border-l border-border bg-background', className)}>
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <MessageSquare className="h-4 w-4 text-primary" />
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nova (Workspace)</span>
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-2">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-primary" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nova</span>
+        </div>
+        {onCollapse && (
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCollapse} title="Close panel">
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       <div ref={scrollRef} className="flex-1 overflow-auto p-3">
         {messages.length === 0 ? (
@@ -204,6 +219,11 @@ export function WorkspaceChatPanel({
           </div>
         )}
       </div>
+      {error && (
+        <div className="shrink-0 border-t border-border bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          {error}
+        </div>
+      )}
       <div className="shrink-0 border-t border-border p-2">
         <form onSubmit={handleSubmit} className="flex gap-2">
           <Textarea

@@ -2,8 +2,14 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor from '@monaco-editor/react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTheme } from 'next-themes'
-import { Play, Copy, Download, Terminal as TerminalIcon, Trash2, GripVertical, Package, FolderOpen, FileCode, Search, GitBranch, Puzzle, X, MessageSquare } from 'lucide-react'
+import { Play, Copy, Download, Terminal as TerminalIcon, Trash2, GripVertical, Package, FolderOpen, FileCode, Search, GitBranch, Puzzle, X, MessageSquare, FilePlus, PlayCircle, MoreHorizontal } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { logger } from '@/lib/logger'
 import { WorkspaceChatPanel } from '@/components/workspace/WorkspaceChatPanel'
@@ -227,7 +233,10 @@ export function WorkspacePage() {
   const [activePanel, setActivePanel] = useState<'terminal' | 'output' | 'problems'>('terminal')
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [chatPanelOpen, setChatPanelOpen] = useState(true)
-  const [chatPanelWidth] = useState(340)
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [chatPanelWidth, setChatPanelWidth] = useState(340)
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  const [isResizingChat, setIsResizingChat] = useState(false)
   const workspaceSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (workspaceSaveTimeoutRef.current) clearTimeout(workspaceSaveTimeoutRef.current)
@@ -394,10 +403,47 @@ export function WorkspacePage() {
     [activePath]
   )
 
-  const handleRun = async () => {
+  const addFile = useCallback((path: string, content = '') => {
+    const next = path.trim() || `file-${Date.now()}.js`
+    setWorkspaceFiles((prev) => ({ ...prev, [next]: content || `// ${next}\n` }))
+    openFile(next)
+  }, [openFile])
+
+  const deleteFile = useCallback((path: string) => {
+    setWorkspaceFiles((prev) => {
+      const next = { ...prev }
+      delete next[path]
+      return next
+    })
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t.path !== path)
+      if (activeTabId === path) setActiveTabId(next.length ? next[next.length - 1].id : null)
+      return next.length ? next : [{ id: 'main.js', path: 'main.js' }]
+    })
+    if (activeTabId === path) setActiveTabId('main.js')
+  }, [activeTabId])
+
+  const renameFile = useCallback((oldPath: string, newPath: string) => {
+    if (oldPath === newPath) return
+    const content = workspaceFiles[oldPath] ?? ''
+    setWorkspaceFiles((prev) => {
+      const next = { ...prev }
+      delete next[oldPath]
+      next[newPath] = content
+      return next
+    })
+    setOpenTabs((prev) =>
+      prev.map((t) => (t.path === oldPath ? { id: newPath, path: newPath } : t))
+    )
+    if (activeTabId === oldPath) setActiveTabId(newPath)
+  }, [workspaceFiles, activeTabId])
+
+  const handleRun = useCallback(async (entryPath?: string) => {
+    const code = entryPath ? (workspaceFiles[entryPath] ?? '') : runCode
+    const lang = entryPath ? getLanguageFromPath(entryPath) : runLanguage
     setRunLoading(true)
     try {
-      if (runLanguage === 'javascript') {
+      if (lang === 'javascript') {
         const logs: string[] = []
         const captureLog = (...args: unknown[]) => {
           logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' '))
@@ -405,7 +451,7 @@ export function WorkspacePage() {
         try {
           const run = new Function(
             'console',
-            `const __log = console.log; try { ${runCode} } finally { console.log = __log; }`
+            `const __log = console.log; try { ${code} } finally { console.log = __log; }`
           )
           run({ ...console, log: captureLog })
           appendTerminal('output', logs.join('\n') || '(no output)')
@@ -414,11 +460,11 @@ export function WorkspacePage() {
         }
         return
       }
-      if (runLanguage === 'typescript') {
+      if (lang === 'typescript') {
         try {
           // @ts-expect-error - ESM URL resolved at runtime
           const ts = await import('https://esm.sh/typescript@5.6.3')
-          const out = ts.transpileModule(runCode, {
+          const out = ts.transpileModule(code, {
             compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
           })
           const logs: string[] = []
@@ -436,7 +482,7 @@ export function WorkspacePage() {
         }
         return
       }
-      if (runLanguage === 'python') {
+      if (lang === 'python') {
         try {
           if (!pyodideRef.current) {
             appendTerminal('output', 'Loading Python runtime (Pyodide)...')
@@ -476,17 +522,17 @@ export function WorkspacePage() {
               `import micropip\nawait micropip.install([${pkgs.map((p) => `"${p}"`).join(', ')}])`
             )
           }
-          await pyodide.runPythonAsync(runCode)
+          await pyodide.runPythonAsync(code)
           appendTerminal('output', '(Python finished)')
         } catch (e: unknown) {
           appendTerminal('error', `Python: ${e instanceof Error ? e.message : String(e)}`)
         }
         return
       }
-      if (runLanguage === 'html') {
+      if (lang === 'html') {
         const win = window.open('', '_blank')
         if (win) {
-          win.document.write(runCode)
+          win.document.write(code)
           win.document.close()
           appendTerminal('output', 'HTML preview opened in new tab.')
         } else {
@@ -494,8 +540,8 @@ export function WorkspacePage() {
         }
         return
       }
-      if (runLanguage === 'css') {
-        const html = `<!DOCTYPE html><html><head><style>${runCode}</style></head><body><h1>CSS Preview</h1><p>Your styles are applied above.</p></body></html>`
+      if (lang === 'css') {
+        const html = `<!DOCTYPE html><html><head><style>${code}</style></head><body><h1>CSS Preview</h1><p>Your styles are applied above.</p></body></html>`
         const win = window.open('', '_blank')
         if (win) {
           win.document.write(html)
@@ -506,23 +552,34 @@ export function WorkspacePage() {
         }
         return
       }
-      if (PISTON_LANG[runLanguage]) {
+      if (PISTON_LANG[lang]) {
         await runViaPiston(
-          runLanguage,
-          runCode,
+          lang,
+          code,
           (out) => appendTerminal('output', out),
           (err) => appendTerminal('error', err)
         )
         return
       }
-      appendTerminal('output', `Run not available for ${runLanguage}. Use Download to save and run locally.`)
+      appendTerminal('output', `Run not available for ${lang}. Use Download to save and run locally.`)
     } catch (e: unknown) {
       logger.error('Workspace run failed', 'WorkspacePage', e)
       appendTerminal('error', `Error: ${e instanceof Error ? e.message : 'Unknown'}`)
     } finally {
       setRunLoading(false)
     }
-  }
+  }, [runCode, runLanguage, workspaceFiles, appendTerminal, shell, pythonPackages])
+
+  const handleRunAll = useCallback(async () => {
+    const entry = ['main.js', 'index.js', 'app.js', 'index.ts', 'main.ts'].find((p) => workspaceFiles[p])
+    if (entry) {
+      openFile(entry)
+      await new Promise((r) => setTimeout(r, 50))
+      await handleRun(entry)
+    } else {
+      await handleRun()
+    }
+  }, [workspaceFiles, openFile, handleRun])
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(runCode)
@@ -569,6 +626,29 @@ export function WorkspacePage() {
     }
   }, [isDragging, handleResizeMove, handleResizeEnd])
 
+  const handleSidebarResize = useCallback((e: MouseEvent) => {
+    if (!containerRef.current || !isResizingSidebar) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    setSidebarWidth(Math.min(400, Math.max(140, x)))
+  }, [isResizingSidebar])
+  const handleChatResize = useCallback((e: MouseEvent) => {
+    if (!containerRef.current || !isResizingChat) return
+    const rect = containerRef.current.getBoundingClientRect()
+    setChatPanelWidth(Math.min(600, Math.max(200, rect.right - e.clientX)))
+  }, [isResizingChat])
+  useEffect(() => {
+    if (!isResizingSidebar && !isResizingChat) return
+    const onMove = (e: MouseEvent) => {
+      if (isResizingSidebar) handleSidebarResize(e)
+      else if (isResizingChat) handleChatResize(e)
+    }
+    const onUp = () => { setIsResizingSidebar(false); setIsResizingChat(false) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [isResizingSidebar, isResizingChat, handleSidebarResize, handleChatResize])
+
   const fileTree = pathToTree(workspaceFiles)
 
   return (
@@ -613,18 +693,35 @@ export function WorkspacePage() {
           </button>
         </div>
 
-        {/* Sidebar - Explorer */}
+        {/* Sidebar - Explorer (resizable) */}
         {sidebarOpen && (
-          <div className="flex w-60 shrink-0 flex-col border-r border-border bg-muted/20">
-            <div className="flex h-9 items-center border-b border-border px-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Explorer</span>
-            </div>
-            <div className="flex-1 overflow-auto py-2">
+          <>
+            <div style={{ width: sidebarWidth, minWidth: 120 }} className="flex shrink-0 flex-col border-r border-border bg-muted/20">
+              <div className="flex h-9 items-center justify-between border-b border-border px-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Explorer</span>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { const p = window.prompt('File path (e.g. script.py or src/helper.js)'); if (p != null && p.trim()) addFile(p.trim()); }} title="New file">
+                  <FilePlus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-auto py-2">
               {fileTree.children?.map((node) => (
-                <TreeNode key={node.name} node={node} openFile={openFile} />
+                <TreeNode
+                  key={node.name + (node.path ?? '')}
+                  node={node}
+                  openFile={openFile}
+                  onDeleteFile={deleteFile}
+                  onRenameFile={renameFile}
+                />
               ))}
+              </div>
             </div>
-          </div>
+            <div
+              role="separator"
+              aria-label="Resize sidebar"
+              onMouseDown={(e) => { e.preventDefault(); setIsResizingSidebar(true) }}
+              className="w-1 shrink-0 cursor-ew-resize border-r border-border bg-transparent hover:bg-primary/20"
+            />
+          </>
         )}
 
         {/* Editor area: tabs + Monaco */}
@@ -656,9 +753,13 @@ export function WorkspacePage() {
 
           {/* Toolbar: Run, Copy, Download, Shell, Python packages */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-2 py-1.5">
-            <Button size="sm" onClick={() => void handleRun()} disabled={runLoading}>
+            <Button size="sm" onClick={() => void handleRun()} disabled={runLoading} title="Run active file">
               <Play className="mr-1.5 h-4 w-4" />
               {runLoading ? 'Running…' : 'Run'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void handleRunAll()} disabled={runLoading} title="Run main / entry file">
+              <PlayCircle className="mr-1.5 h-4 w-4" />
+              Run all
             </Button>
             <Button variant="outline" size="sm" onClick={handleCopy} title="Copy">
               <Copy className="h-4 w-4" />
@@ -820,23 +921,42 @@ export function WorkspacePage() {
           </div>
         </div>
 
-        {/* Right: Nova chat panel (read/write editors, run terminal) */}
-        {chatPanelOpen && (
-          <div style={{ width: chatPanelWidth }} className="flex min-w-0 shrink-0 flex-col">
-            <WorkspaceChatPanel
-              workspaceContext={{
-                files: workspaceFiles,
-                terminalLines,
-                activePath,
-              }}
-              onWriteFile={(path, content) => {
-                setWorkspaceFiles((prev) => ({ ...prev, [path]: content }))
-                openFile(path)
-              }}
-              onRunCommand={(command) => executeCommand(command)}
-              onOpenFile={openFile}
+        {/* Right: Nova chat panel – collapsed strip or full panel (resizable) */}
+        {chatPanelOpen ? (
+          <>
+            <div
+              role="separator"
+              aria-label="Resize chat panel"
+              onMouseDown={(e) => { e.preventDefault(); setIsResizingChat(true) }}
+              className="w-1 shrink-0 cursor-ew-resize border-r border-border bg-transparent hover:bg-primary/20"
             />
-          </div>
+            <div style={{ width: chatPanelWidth, minWidth: 200 }} className="flex min-w-0 shrink-0 flex-col">
+              <WorkspaceChatPanel
+                workspaceContext={{
+                  files: workspaceFiles,
+                  terminalLines,
+                  activePath,
+                }}
+                onWriteFile={(path, content) => {
+                  setWorkspaceFiles((prev) => ({ ...prev, [path]: content }))
+                  openFile(path)
+                }}
+                onRunCommand={(command) => executeCommand(command)}
+                onOpenFile={openFile}
+                onCollapse={() => setChatPanelOpen(false)}
+              />
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setChatPanelOpen(true)}
+            className="flex w-8 shrink-0 flex-col items-center justify-center border-l border-border bg-muted/40 py-2 hover:bg-muted"
+            title="Open Nova (Workspace)"
+          >
+            <MessageSquare className="h-5 w-5 text-muted-foreground" />
+            <span className="mt-1 text-[10px] text-muted-foreground">Nova</span>
+          </button>
         )}
       </div>
 
@@ -856,21 +976,50 @@ export function WorkspacePage() {
   )
 }
 
-function TreeNode({ node, openFile }: { node: FileTreeNode; openFile: (path: string) => void }) {
+const FILE_EXTENSIONS = ['js', 'ts', 'py', 'html', 'css', 'json', 'md', 'cpp', 'java', 'rs', 'go', 'cs'] as const
+
+function TreeNode({
+  node,
+  openFile,
+  onDeleteFile,
+  onRenameFile,
+}: {
+  node: FileTreeNode
+  openFile: (path: string) => void
+  onDeleteFile: (path: string) => void
+  onRenameFile: (oldPath: string, newPath: string) => void
+}) {
   const [open, setOpen] = useState(true)
   const hasChildren = node.children && node.children.length > 0
   const isFile = !!node.path
 
   if (isFile) {
+    const path = node.path!
+    const base = path.replace(/\.[^.]+$/, '') || path
     return (
-      <button
-        type="button"
-        onClick={() => openFile(node.path!)}
-        className="flex w-full items-center gap-2 truncate px-3 py-1 text-left text-sm hover:bg-muted/60"
-      >
-        <FileCode className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{node.name}</span>
-      </button>
+      <div className="group flex w-full items-center gap-0.5 rounded px-2 py-1 text-left text-sm hover:bg-muted/60">
+        <button type="button" onClick={() => openFile(path)} className="flex min-w-0 flex-1 items-center gap-2 truncate">
+          <FileCode className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{node.name}</span>
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {FILE_EXTENSIONS.filter((ext) => `${base}.${ext}` !== path).map((ext) => (
+              <DropdownMenuItem key={ext} onClick={() => onRenameFile(path, `${base}.${ext}`)}>
+                Save as .{ext}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem onClick={() => onDeleteFile(path)} className="text-destructive">
+              Delete file
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     )
   }
   return (
@@ -878,7 +1027,7 @@ function TreeNode({ node, openFile }: { node: FileTreeNode; openFile: (path: str
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 truncate px-3 py-1 text-left text-sm hover:bg-muted/60"
+        className="flex w-full items-center gap-2 truncate px-2 py-1 text-left text-sm hover:bg-muted/60"
       >
         <span className="w-4 shrink-0 text-muted-foreground">{open ? '▼' : '▶'}</span>
         <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -887,7 +1036,7 @@ function TreeNode({ node, openFile }: { node: FileTreeNode; openFile: (path: str
       {open && hasChildren && (
         <div className="pl-4">
           {node.children!.map((child) => (
-            <TreeNode key={child.name + (child.path ?? '')} node={child} openFile={openFile} />
+            <TreeNode key={child.name + (child.path ?? '')} node={child} openFile={openFile} onDeleteFile={onDeleteFile} onRenameFile={onRenameFile} />
           ))}
         </div>
       )}
