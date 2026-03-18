@@ -16,6 +16,7 @@ import {
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Plus } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 export function CreateTeamDialog() {
   const [open, setOpen] = useState(false)
@@ -58,7 +59,7 @@ export function CreateTeamDialog() {
       setName('')
       setDescription('')
     } catch (error) {
-      console.error('Error creating team:', error)
+      logger.error('Error creating team', 'CreateTeamDialog', error)
     } finally {
       setLoading(false)
     }

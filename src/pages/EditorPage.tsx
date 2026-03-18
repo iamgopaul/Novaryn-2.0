@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useTheme } from 'next-themes'
 import { Play, Copy, Download, Code2 } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 const defaultCode = `// Welcome to Novaryn Code Editor
 function greet(name) {
@@ -45,20 +46,30 @@ export function EditorPage() {
     try {
       if (language === 'javascript' || language === 'typescript') {
         const logs: string[] = []
-        const originalLog = console.log
-        console.log = (...args: unknown[]) => { logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')) }
-        try {
-          const result = eval(code)
-          if (result !== undefined) logs.push(`=> ${typeof result === 'object' ? JSON.stringify(result, null, 2) : result}`)
-        } catch (e: unknown) {
-          logs.push(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
+        const captureLog = (...args: unknown[]) => {
+          logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' '))
         }
-        console.log = originalLog
-        setOutput(logs.join('\n'))
+        try {
+          const run = new Function('console', `
+            const __log = console.log;
+            try {
+              ${code}
+            } finally {
+              console.log = __log;
+            }
+          `)
+          run({ ...console, log: captureLog })
+          setOutput(logs.join('\n'))
+        } catch (e: unknown) {
+          logger.debug('Editor run: user code threw', 'EditorPage', e)
+          logs.push(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
+          setOutput(logs.join('\n'))
+        }
       } else {
         setOutput(`Running ${language} code requires a backend runtime.`)
       }
     } catch (e: unknown) {
+      logger.error('Editor run failed', 'EditorPage', e)
       setOutput(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
     }
   }

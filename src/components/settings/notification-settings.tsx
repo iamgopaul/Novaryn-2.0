@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { Mail, MessageSquare, Users, Bell, Zap } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 const notificationOptions = [
   {
@@ -63,6 +64,7 @@ export function NotificationSettings() {
       await new Promise(resolve => setTimeout(resolve, 500))
       toast.success('Notification preferences saved')
     } catch (error) {
+      logger.error('Failed to save notification preferences', 'NotificationSettings', error)
       toast.error('Failed to save preferences')
     } finally {
       setLoading(false)

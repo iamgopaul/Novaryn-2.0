@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 
 interface ProfileSettingsProps {
   user: User
@@ -46,7 +47,7 @@ export function ProfileSettings({ user, profile }: ProfileSettingsProps) {
 
       toast.success('Profile updated successfully')
     } catch (error) {
-      console.error('Error updating profile:', error)
+      logger.error('Error updating profile', 'ProfileSettings', error)
       toast.error('Failed to update profile')
     } finally {
       setLoading(false)

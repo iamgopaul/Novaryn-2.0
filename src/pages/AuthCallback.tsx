@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
+import { logger } from '@/lib/logger'
 
 export function AuthCallback() {
   const navigate = useNavigate()
@@ -11,11 +12,16 @@ export function AuthCallback() {
       const code = searchParams.get('code')
       const next = searchParams.get('next') ?? '/dashboard'
       if (code) {
-        const supabase = createClient()
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (!error) {
-          navigate(next, { replace: true })
-          return
+        try {
+          const supabase = createClient()
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
+          if (!error) {
+            navigate(next, { replace: true })
+            return
+          }
+          logger.error('Auth callback: exchangeCodeForSession failed', 'AuthCallback', error)
+        } catch (err) {
+          logger.error('Auth callback failed', 'AuthCallback', err)
         }
       }
       navigate('/auth/error?error=Could not authenticate user', { replace: true })

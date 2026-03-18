@@ -1,8 +1,12 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
 import { Button } from '@/components/ui/button'
 import { Bot, Minus, X, GripVertical } from 'lucide-react'
-import { NovaChatPanel } from './nova-chat-panel'
+import { NovaChatErrorBoundary } from './nova-chat-error-boundary'
 import { cn } from '@/lib/utils'
+
+const NovaChatPanel = lazy(() =>
+  import('./nova-chat-panel').then((m) => ({ default: m.NovaChatPanel }))
+)
 
 const BUBBLE_SIZE = 56
 const POPUP_WIDTH = 380
@@ -139,7 +143,20 @@ export function NovaChatBubble({ userId }: NovaChatBubbleProps) {
                 </div>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
-                <NovaChatPanel userId={userId} variant="popup" className="h-full border-0 shadow-none" />
+                <NovaChatErrorBoundary
+                  onClose={() => { setOpen(false); setMinimized(false) }}
+                  closeLabel="Close"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full items-center justify-center p-4">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      </div>
+                    }
+                  >
+                    <NovaChatPanel userId={userId} variant="popup" className="h-full border-0 shadow-none" />
+                  </Suspense>
+                </NovaChatErrorBoundary>
               </div>
             </>
           ) : (

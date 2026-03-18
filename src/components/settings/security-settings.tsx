@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { Shield, Key, Smartphone } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 interface SecuritySettingsProps {
   user: User
@@ -43,7 +44,7 @@ export function SecuritySettings({ user, profile }: SecuritySettingsProps) {
       setTwoFactorEnabled(newValue)
       toast.success(newValue ? '2FA enabled' : '2FA disabled')
     } catch (error) {
-      console.error('Error toggling 2FA:', error)
+      logger.error('Error toggling 2FA', 'SecuritySettings', error)
       toast.error('Failed to update 2FA settings')
     } finally {
       setLoading(false)
@@ -78,7 +79,7 @@ export function SecuritySettings({ user, profile }: SecuritySettingsProps) {
       setConfirmPassword('')
       toast.success('Password updated successfully')
     } catch (error) {
-      console.error('Error changing password:', error)
+      logger.error('Error changing password', 'SecuritySettings', error)
       toast.error('Failed to change password')
     } finally {
       setPasswordLoading(false)

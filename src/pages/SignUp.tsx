@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FieldGroup, Field, FieldLabel, FieldError } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { NovarynLogo } from '@/components/novaryn-logo'
+import { logger } from '@/lib/logger'
 
 export function SignUp() {
   const navigate = useNavigate()
@@ -40,7 +41,7 @@ export function SignUp() {
       if (signUpError) { setError(signUpError.message); setLoading(false); return }
       navigate('/auth/sign-up-success')
     } catch (err) {
-      console.error('Sign up error:', err)
+      logger.error('Sign up error', 'SignUp', err)
       const message = err instanceof Error ? err.message : 'An unexpected error occurred'
       setError(message)
       setLoading(false)

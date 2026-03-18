@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { LogOut, Trash2, Download } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 interface AccountSettingsProps {
   user: User
@@ -36,7 +37,7 @@ export function AccountSettings({ user }: AccountSettingsProps) {
       await supabase.auth.signOut()
       navigate('/')
     } catch (error) {
-      console.error('Error signing out:', error)
+      logger.error('Error signing out', 'AccountSettings', error)
       toast.error('Failed to sign out')
     } finally {
       setSignOutLoading(false)
@@ -77,7 +78,7 @@ export function AccountSettings({ user }: AccountSettingsProps) {
 
       toast.success('Data exported successfully')
     } catch (error) {
-      console.error('Error exporting data:', error)
+      logger.error('Error exporting data', 'AccountSettings', error)
       toast.error('Failed to export data')
     } finally {
       setExportLoading(false)
@@ -98,7 +99,7 @@ export function AccountSettings({ user }: AccountSettingsProps) {
       toast.success('Account deleted')
       navigate('/')
     } catch (error) {
-      console.error('Error deleting account:', error)
+      logger.error('Error deleting account', 'AccountSettings', error)
       toast.error('Failed to delete account')
     } finally {
       setDeleteLoading(false)

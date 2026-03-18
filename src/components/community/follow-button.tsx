@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { UserPlus, UserMinus } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 interface FollowButtonProps {
   userId?: string
@@ -48,7 +49,7 @@ export function FollowButton({
         setIsFollowing(true)
       }
     } catch (error) {
-      console.error('Error toggling follow:', error)
+      logger.error('Error toggling follow', 'FollowButton', error)
     } finally {
       setLoading(false)
     }

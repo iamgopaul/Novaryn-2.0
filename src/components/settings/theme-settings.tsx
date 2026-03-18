@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { Sun, Moon, Monitor, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 
 interface ThemeSettingsProps {
   profile: Profile | null
@@ -58,7 +59,7 @@ export function ThemeSettings({ profile }: ThemeSettingsProps) {
 
       toast.success('Appearance settings saved')
     } catch (error) {
-      console.error('Error saving theme settings:', error)
+      logger.error('Error saving theme settings', 'ThemeSettings', error)
       toast.error('Failed to save settings')
     } finally {
       setLoading(false)

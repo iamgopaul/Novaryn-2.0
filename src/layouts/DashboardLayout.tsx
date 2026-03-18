@@ -7,6 +7,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { NovaChatBubble } from '@/components/chatbot/nova-chat-bubble'
 import { Profile } from '@/lib/types'
+import { logger } from '@/lib/logger'
 
 export function DashboardLayout() {
   const navigate = useNavigate()
@@ -18,15 +19,21 @@ export function DashboardLayout() {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user: u } } = await supabase.auth.getUser()
-      if (!u) {
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser()
+        if (!u) {
+          navigate('/auth/login', { replace: true })
+          return
+        }
+        setUser(u)
+        const { data: p } = await supabase.from('profiles').select('*').eq('id', u.id).single()
+        setProfile(p ?? null)
+      } catch (err) {
+        logger.error('Dashboard layout init failed', 'DashboardLayout', err)
         navigate('/auth/login', { replace: true })
-        return
+      } finally {
+        setLoading(false)
       }
-      setUser(u)
-      const { data: p } = await supabase.from('profiles').select('*').eq('id', u.id).single()
-      setProfile(p ?? null)
-      setLoading(false)
     }
     init()
   }, [navigate])

@@ -18,6 +18,7 @@ import { Bot, User, Send, Plus, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import { ChatConversation } from '@/lib/types'
+import { logger } from '@/lib/logger'
 
 type UIMessage = { id: string; role: string; parts?: Array<{ type: string; text?: string }> }
 
@@ -76,13 +77,19 @@ export function NovaChatPanel({
   conversationIdRef.current = conversationId
 
   const loadConversations = async () => {
-    const { data } = await supabase
-      .from('chat_conversations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false })
-    setConversations((data as ChatConversation[]) ?? [])
-    setLoadingConvs(false)
+    try {
+      const { data } = await supabase
+        .from('chat_conversations')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+      setConversations((data as ChatConversation[]) ?? [])
+    } catch (e) {
+      logger.error('Load conversations failed', 'NovaChatPanel', e)
+      setConversations([])
+    } finally {
+      setLoadingConvs(false)
+    }
   }
 
   useEffect(() => {
@@ -109,21 +116,25 @@ export function NovaChatPanel({
   }, [messages])
 
   const loadConversation = async (convId: string) => {
-    const { data: chatMessages } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('conversation_id', convId)
-      .order('created_at', { ascending: true })
+    try {
+      const { data: chatMessages } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: true })
 
-    if (chatMessages?.length) {
-      const uiMessages = chatMessages.map((msg, idx) => ({
-        id: msg.id || String(idx),
-        role: msg.role,
-        parts: [{ type: 'text' as const, text: msg.content }],
-      }))
-      setMessages(uiMessages)
-      setConversationId(convId)
-      onSelectConversation?.(convId)
+      if (chatMessages?.length) {
+        const uiMessages = chatMessages.map((msg, idx) => ({
+          id: msg.id || String(idx),
+          role: msg.role,
+          parts: [{ type: 'text' as const, text: msg.content }],
+        }))
+        setMessages(uiMessages)
+        setConversationId(convId)
+        onSelectConversation?.(convId)
+      }
+    } catch (e) {
+      logger.error('Load conversation failed', 'NovaChatPanel', e)
     }
   }
 

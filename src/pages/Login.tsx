@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FieldGroup, Field, FieldLabel, FieldError } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { NovarynLogo } from '@/components/novaryn-logo'
+import { logger } from '@/lib/logger'
 
 export function Login() {
   const navigate = useNavigate()
@@ -47,7 +48,8 @@ export function Login() {
         return
       }
       setResendCooldown(30)
-    } catch {
+    } catch (err) {
+      logger.error('Resend 2FA code failed', 'Login', err)
       setError('Failed to resend code')
     }
     setResendLoading(false)
@@ -106,7 +108,8 @@ export function Login() {
           navigate('/dashboard')
         }
       }
-    } catch {
+    } catch (err) {
+      logger.error('Login failed', 'Login', err)
       setError('An unexpected error occurred')
       setLoading(false)
     }
@@ -129,7 +132,8 @@ export function Login() {
         return
       }
       navigate('/dashboard')
-    } catch {
+    } catch (err) {
+      logger.error('2FA verification failed', 'Login', err)
       setError('An unexpected error occurred')
       setLoading(false)
     }

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
 import { ImagePlus, Send } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 export function CreatePostCard() {
   const [content, setContent] = useState('')
@@ -29,7 +30,7 @@ export function CreatePostCard() {
 
       setContent('')
     } catch (error) {
-      console.error('Error creating post:', error)
+      logger.error('Error creating post', 'CreatePostCard', error)
     } finally {
       setLoading(false)
     }
