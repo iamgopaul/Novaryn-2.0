@@ -223,21 +223,28 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {isRepost ? (
-          <button
-            type="button"
-            onClick={handleGoToOriginal}
-            className="w-full text-left rounded-xl border border-border/80 bg-muted/40 p-3 sm:p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors"
-          >
-            {post.original_post ? (
+          <>
+            {post.content && (
               <p className="whitespace-pre-wrap text-sm sm:text-base text-foreground">
-                {post.original_post.content}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                Original post was removed.
+                {post.content}
               </p>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={handleGoToOriginal}
+              className="w-full text-left rounded-xl border border-border/80 bg-muted/40 p-3 sm:p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors"
+            >
+              {post.original_post ? (
+                <p className="whitespace-pre-wrap text-sm sm:text-base text-foreground">
+                  {post.original_post.content}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  Original post was removed.
+                </p>
+              )}
+            </button>
+          </>
         ) : (
           <p className="whitespace-pre-wrap">{post.content}</p>
         )}
