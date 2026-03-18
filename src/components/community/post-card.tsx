@@ -114,13 +114,14 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     setCommentSending(false)
   }
 
-  const handleRepost = async () => {
+  const openRepostComposer = () => {
+    if (!currentUserId || loading) return
+    setIsRepostComposerOpen(true)
+    setRepostText('')
+  }
+
+  const submitRepost = async () => {
     if (loading || !currentUserId) return
-    if (!isRepostComposerOpen) {
-      setIsRepostComposerOpen(true)
-      setRepostText('')
-      return
-    }
     setLoading(true)
     const targetId = post.repost_of || post.id
     const content = repostText.trim()
@@ -131,6 +132,9 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
     })
     if (error) {
       console.error('Error creating repost', error)
+    } else {
+      setIsRepostComposerOpen(false)
+      setRepostText('')
     }
     setLoading(false)
   }
@@ -271,7 +275,7 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
             <MessageCircle className="h-4 w-4" />
             {comments.length}
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={handleRepost} disabled={!currentUserId || loading}>
+          <Button variant="ghost" size="sm" className="gap-2" onClick={openRepostComposer} disabled={!currentUserId || loading}>
             <Repeat2 className="h-4 w-4" />
             {post.reposts_count}
           </Button>
@@ -302,7 +306,7 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
               </Button>
               <Button
                 size="sm"
-                onClick={handleRepost}
+                onClick={submitRepost}
                 disabled={loading}
               >
                 Repost
