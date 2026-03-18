@@ -71,7 +71,10 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
       const { data: profiles } = userIds.length
         ? await supabase.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds)
         : { data: [] as CommentRow['profile'][] }
-      const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+      const safeProfiles = (profiles || []).filter(
+        (p): p is NonNullable<CommentRow['profile']> => Boolean(p)
+      )
+      const profileMap = new Map(safeProfiles.map((p) => [p.id, p]))
       setComments(rows.map((c) => ({ ...c, profile: profileMap.get(c.user_id) })))
     }
     load()
@@ -99,7 +102,10 @@ export function PostCard({ post, currentUserId }: PostCardProps) {
       const { data: profiles } = userIds.length
         ? await supabase.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds)
         : { data: [] as CommentRow['profile'][] }
-      const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+      const safeProfiles = (profiles || []).filter(
+        (p): p is NonNullable<CommentRow['profile']> => Boolean(p)
+      )
+      const profileMap = new Map(safeProfiles.map((p) => [p.id, p]))
       setComments(rows.map((c) => ({ ...c, profile: profileMap.get(c.user_id) })))
     }
     setCommentSending(false)
