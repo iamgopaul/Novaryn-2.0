@@ -148,3 +148,31 @@
   0%, 100% { --f3-s: 1; }
   50% { --f3-s: 1.1; }
 }
+
+/* Reactive background: tap/click ripple (centered on tap) */
+.reactive-background-ripple {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0);
+  transition: none;
+  pointer-events: none;
+}
+.reactive-background-ripple.reactive-background-ripple--active {
+  animation: reactive-ripple 0.6s ease-out forwards;
+}
+@keyframes reactive-ripple {
+  0% {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.5);
+  }
+}
