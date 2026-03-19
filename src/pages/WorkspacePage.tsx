@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { logger } from '@/lib/logger'
 import { cn } from '@/lib/utils'
 import { WorkspaceChatPanel } from '@/components/workspace/WorkspaceChatPanel'
+import { zipSync, strToU8 } from 'fflate'
 
 const STORAGE_KEY = 'novaryn_workspace'
 const WORKSPACE_FILES_KEY = 'novaryn_workspace_files'
@@ -141,6 +142,7 @@ const JUDGE0_LANG: Record<string, number> = {
 }
 const JUDGE0_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_JUDGE0_BASE_URL) || 'https://ce.judge0.com'
 const JUDGE0_AUTH = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_JUDGE0_AUTH_TOKEN : undefined
+const JUDGE0_MULTI_FILE_LANG_ID = 89
 
 /** Resolve import spec relative to fromPath; return workspace path (no leading slash). */
 function resolveImportPath(fromPath: string, importSpec: string): string {
@@ -286,6 +288,89 @@ async function runViaJudge0(
         method: 'POST',
         headers,
         body: JSON.stringify({ source_code: sourceCode, language_id: languageId }),
+      }
+    )
+    const text = await res.text()
+    if (!res.ok) {
+      onError(`Judge0 API error: ${res.status}. ${text || 'Try again or use Download.'}`)
+      return
+    }
+    let data: {
+      stdout?: string | null
+      stderr?: string | null
+      compile_output?: string | null
+      message?: string | null
+      status?: { id: number; description?: string }
+    }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      onError('Invalid Judge0 response. Use Download to run locally.')
+      return
+    }
+    const statusId = data.status?.id
+    if (data.compile_output?.trim()) onOutput(`Compile:\n${data.compile_output.trim()}\n`)
+    if (data.stderr?.trim()) onError(data.stderr)
+    if (data.message?.trim() && statusId !== 3) onError(data.message)
+    if (statusId === 3) {
+      const out = (data.stdout ?? '').trim()
+      onOutput(out || '(Program ran with no output)')
+    } else if (statusId !== 6 && !data.stderr?.trim() && !data.compile_output?.trim()) {
+      onError(data.status?.description ?? `Execution failed (status ${statusId}). Use Download to run locally.`)
+    }
+  } catch (e) {
+    onError(`Judge0: ${e instanceof Error ? e.message : 'Network error'}. Check connection or use Download.`)
+  }
+}
+
+function uint8ArrayToBase64(u8: Uint8Array): string {
+  const chunkSize = 8192
+  let binary = ''
+  for (let i = 0; i < u8.length; i += chunkSize) {
+    const chunk = u8.subarray(i, Math.min(i + chunkSize, u8.length))
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
+  }
+  return btoa(binary)
+}
+
+/** Judge0 multi-file (language_id 89): zip of all .java + compile + run scripts. */
+async function runViaJudge0MultiFile(
+  workspaceFiles: Record<string, string>,
+  entryPath: string,
+  onOutput: (out: string) => void,
+  onError: (err: string) => void
+): Promise<void> {
+  const javaPaths = Object.keys(workspaceFiles).filter((p) => /\.java$/i.test(p))
+  if (javaPaths.length < 2) return
+  const mainClass = entryPath.replace(/\.java$/i, '')
+  onOutput(`Running Java (Judge0, ${javaPaths.length} files)...\n`)
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (JUDGE0_AUTH) headers['X-Auth-Token'] = JUDGE0_AUTH
+  const zipObj: Record<string, Uint8Array> = {
+    compile: strToU8('#!/bin/bash\nset -e\njavac *.java\n'),
+    run: strToU8(`#!/bin/bash\njava ${mainClass}\n`),
+  }
+  for (const path of javaPaths) {
+    zipObj[path] = strToU8(workspaceFiles[path] ?? '')
+  }
+  let zipBytes: Uint8Array
+  try {
+    zipBytes = zipSync(zipObj, { level: 0 })
+  } catch (e) {
+    onError(`Zip failed: ${e instanceof Error ? e.message : 'Unknown'}`)
+    return
+  }
+  const additionalFilesBase64 = uint8ArrayToBase64(zipBytes)
+  try {
+    const res = await fetch(
+      `${JUDGE0_BASE}/submissions?base64_encoded=false&wait=true`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          language_id: JUDGE0_MULTI_FILE_LANG_ID,
+          additional_files: additionalFilesBase64,
+        }),
       }
     )
     const text = await res.text()
@@ -870,12 +955,17 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
       if (lang === 'java' && entryFile) {
         const baseName = entryFile.replace(/\.java$/i, '')
         const runCmd = `javac ${entryFile} && java ${baseName}`
+        const javaPaths = Object.keys(workspaceFiles).filter((p) => /\.java$/i.test(p))
+        const isMultiFile = javaPaths.length >= 2
         try {
           runOut('output', 'Running Java...\n')
           const res = await fetch('/api/workspace/run-command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command: runCmd, workspaceFiles }),
+            body: JSON.stringify({
+              command: isMultiFile ? `javac ${javaPaths.join(' ')} && java ${baseName}` : runCmd,
+              workspaceFiles,
+            }),
           })
           const data = await res.json().catch(() => ({}))
           if (res.ok) {
@@ -885,7 +975,11 @@ export function WorkspacePage({ fullScreen = false }: { fullScreen?: boolean }) 
             return
           }
         } catch (_) {}
-        await runViaJudge0('java', code, (o) => runOut('output', o), (e) => runOut('error', e))
+        if (isMultiFile) {
+          await runViaJudge0MultiFile(workspaceFiles, entryFile, (o) => runOut('output', o), (e) => runOut('error', e))
+        } else {
+          await runViaJudge0('java', code, (o) => runOut('output', o), (e) => runOut('error', e))
+        }
         return
       }
       if (lang === 'cpp' && entryFile) {
